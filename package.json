@@ -45,17 +45,22 @@
     "node": ">=18.0.0"
   },
   "dependencies": {
+    "@google/genai": "^2.8.0",
+    "cors": "^2.8.6",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "mime-types": "^2.1.35",
+    "mongoose": "^9.7.1",
+    "pino": "^9.6.0",
     "puppeteer": "^24.0.0",
     "qrcode-terminal": "^0.12.0",
-    "ws": "^8.18.0",
-    "mime-types": "^2.1.35",
-    "pino": "^9.6.0"
+    "ws": "^8.18.0"
   },
   "devDependencies": {
-    "@types/node": "^22.0.0",
-    "@types/ws": "^8.5.0",
     "@types/mime-types": "^2.1.4",
+    "@types/node": "^22.0.0",
     "@types/qrcode-terminal": "^0.12.2",
+    "@types/ws": "^8.5.0",
     "typescript": "^5.7.0"
   }
 }
