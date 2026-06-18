@@ -1,8 +1,9 @@
 import { EventEmitter } from 'events';
+import * as fs from 'fs';
 import { Browser, Page } from 'puppeteer';
+import * as mime from 'mime-types';
 import { VenomConfig } from '../config';
 import { Logger } from '../utils/logger';
-import * as qrTerminal from 'qrcode-terminal';
 
 /**
  * Connection states
@@ -122,78 +123,118 @@ export class VenomClient extends EventEmitter {
     );
   }
 
+  /** Resolve a local path, URL or data-URI into { data(base64), mimetype, filename } */
+  private async resolveMedia(
+    source: string,
+    filename?: string
+  ): Promise<{ data: string; mimetype: string; filename: string }> {
+    // data URI
+    if (source.startsWith('data:')) {
+      const match = source.match(/^data:([^;]+);base64,(.*)$/);
+      if (match) {
+        const mimetype = match[1];
+        return {
+          data: match[2],
+          mimetype,
+          filename: filename || `file.${mime.extension(mimetype) || 'bin'}`,
+        };
+      }
+    }
+
+    // remote URL
+    if (/^https?:\/\//i.test(source)) {
+      const res = await fetch(source);
+      if (!res.ok) throw new Error(`Failed to fetch media: ${res.status} ${res.statusText}`);
+      const buf = Buffer.from(await res.arrayBuffer());
+      const mimetype =
+        res.headers.get('content-type')?.split(';')[0] ||
+        this.mimeFrom(source, 'application/octet-stream');
+      const name =
+        filename ||
+        source.split('/').pop()?.split('?')[0] ||
+        `file.${mime.extension(mimetype) || 'bin'}`;
+      return { data: buf.toString('base64'), mimetype, filename: name };
+    }
+
+    // local file path
+    const buf = fs.readFileSync(source);
+    const mimetype = this.mimeFrom(source, 'application/octet-stream');
+    return {
+      data: buf.toString('base64'),
+      mimetype,
+      filename: filename || source.split(/[\\/]/).pop() || 'file',
+    };
+  }
+
+  /** Look up a mime type from a filename, with a fallback */
+  private mimeFrom(name: string | undefined, fallback: string): string {
+    const m = name ? mime.lookup(name) : false;
+    return (m as string) || fallback;
+  }
+
   /** Send image from file path or URL */
-  async sendImage(chatId: string, imagePath: string, caption?: string): Promise<any> {
+  async sendImage(chatId: string, imagePath: string, caption?: string, filename?: string): Promise<any> {
+    const media = await this.resolveMedia(imagePath, filename);
     return this.page.evaluate(
-      (id, img, cap) => (window as any).WWebJS.sendMediaMessage(id, {
-        type: 'image',
-        media: img,
-        caption: cap,
-      }),
-      chatId, imagePath, caption
+      (id, opts) => (window as any).WWebJS.sendMediaMessage(id, opts),
+      chatId, { type: 'image', ...media, caption }
     );
   }
 
   /** Send image from base64 */
   async sendImageFromBase64(chatId: string, base64: string, filename?: string, caption?: string): Promise<any> {
     return this.page.evaluate(
-      (id, b64, name, cap) => (window as any).WWebJS.sendMediaMessage(id, {
+      (id, opts) => (window as any).WWebJS.sendMediaMessage(id, opts),
+      chatId,
+      {
         type: 'image',
-        media: b64,
-        filename: name,
-        caption: cap,
-      }),
-      chatId, base64, filename, caption
+        data: base64,
+        mimetype: this.mimeFrom(filename, 'image/jpeg'),
+        filename: filename || 'image.jpg',
+        caption,
+      }
     );
   }
 
-  /** Send file from path */
+  /** Send file from path or URL */
   async sendFile(chatId: string, filePath: string, filename?: string, caption?: string): Promise<any> {
+    const media = await this.resolveMedia(filePath, filename);
     return this.page.evaluate(
-      (id, file, name, cap) => (window as any).WWebJS.sendMediaMessage(id, {
-        type: 'document',
-        media: file,
-        filename: name,
-        caption: cap,
-      }),
-      chatId, filePath, filename, caption
+      (id, opts) => (window as any).WWebJS.sendMediaMessage(id, opts),
+      chatId, { type: 'document', ...media, caption }
     );
   }
 
   /** Send file from base64 */
   async sendFileFromBase64(chatId: string, base64: string, filename: string, caption?: string): Promise<any> {
     return this.page.evaluate(
-      (id, b64, name, cap) => (window as any).WWebJS.sendMediaMessage(id, {
+      (id, opts) => (window as any).WWebJS.sendMediaMessage(id, opts),
+      chatId,
+      {
         type: 'document',
-        media: b64,
-        filename: name,
-        caption: cap,
-      }),
-      chatId, base64, filename, caption
+        data: base64,
+        mimetype: this.mimeFrom(filename, 'application/octet-stream'),
+        filename: filename || 'file',
+        caption,
+      }
     );
   }
 
-  /** Send audio/voice message */
+  /** Send audio/voice message from path or URL */
   async sendVoice(chatId: string, audioPath: string): Promise<any> {
+    const media = await this.resolveMedia(audioPath);
     return this.page.evaluate(
-      (id, audio) => (window as any).WWebJS.sendMediaMessage(id, {
-        type: 'audio',
-        media: audio,
-        isPtt: true,
-      }),
-      chatId, audioPath
+      (id, opts) => (window as any).WWebJS.sendMediaMessage(id, opts),
+      chatId, { type: 'audio', ...media, isPtt: true }
     );
   }
 
   /** Send audio from base64 */
   async sendVoiceBase64(chatId: string, base64: string): Promise<any> {
     return this.page.evaluate(
-      (id, b64) => (window as any).WWebJS.sendMediaMessage(id, {
-        type: 'audio',
-        media: b64,
-        isPtt: true,
-      }),
-      chatId, base64
+      (id, opts) => (window as any).WWebJS.sendMediaMessage(id, opts),
+      chatId,
+      { type: 'audio', data: base64, mimetype: 'audio/ogg; codecs=opus', filename: 'audio.ogg', isPtt: true }
     );
   }
 
@@ -385,44 +426,32 @@ export class VenomClient extends EventEmitter {
   /** Add participant to group */
   async addParticipant(groupId: string, participantId: string): Promise<any> {
     return this.page.evaluate(
-      async (gid, pid) => {
-        const GroupParticipants = (window as any).require?.('WAWebGroupParticipantsAction');
-        return GroupParticipants?.addParticipants?.(gid, [pid]);
-      },
-      groupId, participantId
+      (gid, action, pids) => (window as any).WWebJS.groupParticipantAction(gid, action, pids),
+      groupId, 'add', [participantId]
     );
   }
 
   /** Remove participant from group */
   async removeParticipant(groupId: string, participantId: string): Promise<any> {
     return this.page.evaluate(
-      async (gid, pid) => {
-        const GroupParticipants = (window as any).require?.('WAWebGroupParticipantsAction');
-        return GroupParticipants?.removeParticipants?.(gid, [pid]);
-      },
-      groupId, participantId
+      (gid, action, pids) => (window as any).WWebJS.groupParticipantAction(gid, action, pids),
+      groupId, 'remove', [participantId]
     );
   }
 
   /** Promote participant to admin */
   async promoteParticipant(groupId: string, participantId: string): Promise<any> {
     return this.page.evaluate(
-      async (gid, pid) => {
-        const GroupParticipants = (window as any).require?.('WAWebGroupParticipantsAction');
-        return GroupParticipants?.promoteParticipants?.(gid, [pid]);
-      },
-      groupId, participantId
+      (gid, action, pids) => (window as any).WWebJS.groupParticipantAction(gid, action, pids),
+      groupId, 'promote', [participantId]
     );
   }
 
   /** Demote admin participant */
   async demoteParticipant(groupId: string, participantId: string): Promise<any> {
     return this.page.evaluate(
-      async (gid, pid) => {
-        const GroupParticipants = (window as any).require?.('WAWebGroupParticipantsAction');
-        return GroupParticipants?.demoteParticipants?.(gid, [pid]);
-      },
-      groupId, participantId
+      (gid, action, pids) => (window as any).WWebJS.groupParticipantAction(gid, action, pids),
+      groupId, 'demote', [participantId]
     );
   }
 
@@ -593,10 +622,7 @@ export class VenomClient extends EventEmitter {
 
   /** Take over session (use here) */
   async useHere(): Promise<void> {
-    await this.page.evaluate(() => {
-      const Socket = (window as any).require?.('WAWebSocketModel')?.Socket;
-      Socket?.takeover?.();
-    });
+    await this.page.evaluate(() => (window as any).WWebJS.useHere());
   }
 
   /** Logout */

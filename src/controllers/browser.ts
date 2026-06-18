@@ -278,7 +278,8 @@ export async function getQRCode(page: Page): Promise<string | null> {
 
       const staticKeyB64 = Base64.encodeB64(noiseKeyPair.staticKeyPair.pubKey);
       const identityKeyB64 = Base64.encodeB64(registrationInfo.identityKeyPair.pubKey);
-      const advSecretKey = MultiDevice.getADVSecretKey();
+      // getADVSecretKey is async — must be awaited or the QR string contains "[object Promise]"
+      const advSecretKey = await MultiDevice.getADVSecretKey();
 
       // Get platform from WAWebCompanionRegClientUtils
       let platform = '';
@@ -412,112 +413,166 @@ export async function injectWAPI(page: Page): Promise<void> {
     // ==================== SENDING ====================
 
     /**
-     * Send a text message
+     * Build the quoted-message context options for a reply.
+     * Returns {} when the target message can't be quoted.
      */
-    W.WWebJS.sendTextMessage = async function (chatId: string, text: string) {
-      const chat = await W.WWebJS._getChat(chatId);
-      if (!chat) throw new Error('Chat not found: ' + chatId);
-
-      const result = await W.WWebJS._buildAndSend(chat, {
-        type: 'chat',
-        body: text,
-      });
-      return result?.serialize?.() || result;
-    };
-
-    /**
-     * Send a media message (image/video/file)
-     */
-    W.WWebJS.sendMediaMessage = async function (
-      chatId: string,
-      base64Data: string,
-      mimeType: string,
-      filename: string,
-      caption?: string
-    ) {
-      const chat = await W.WWebJS._getChat(chatId);
-      if (!chat) throw new Error('Chat not found: ' + chatId);
-
-      const mediaType = mimeType.startsWith('image/')
-        ? 'image'
-        : mimeType.startsWith('video/')
-        ? 'video'
-        : mimeType.startsWith('audio/')
-        ? 'audio'
-        : 'document';
-
-      const result = await W.WWebJS._buildAndSend(chat, {
-        type: mediaType,
-        body: base64Data,
-        mimetype: mimeType,
-        filename,
-        caption: caption || '',
-      });
-      return result?.serialize?.() || result;
-    };
-
-    /**
-     * Send a location
-     */
-    W.WWebJS.sendLocation = async function (
-      chatId: string,
-      lat: number,
-      lng: number,
-      title: string,
-      address: string
-    ) {
-      const chat = await W.WWebJS._getChat(chatId);
-      if (!chat) return null;
-
-      const result = await W.WWebJS._buildAndSend(chat, {
-        type: 'location',
-        loc: title,
-        lat,
-        lng,
-        address,
-      });
-      return result?.serialize?.() || result;
-    };
-
-    /**
-     * Send a contact vCard
-     */
-    W.WWebJS.sendContactVcard = async function (chatId: string, contactId: string, name: string) {
-      const chat = await W.WWebJS._getChat(chatId);
-      const contact = await W.WWebJS._getContact(contactId);
-      if (!chat || !contact) return null;
-
-      const VcardUtils = W.require?.('WAWebFrontendVcardUtils');
-      const vcard = VcardUtils?.vcardFromContactModel?.(contact);
-
-      const result = await W.WWebJS._buildAndSend(chat, {
-        type: 'vcard',
-        body: vcard?.vcard || '',
-        vcardFormattedName: name,
-      });
-      return result?.serialize?.() || result;
-    };
-
-    /**
-     * Reply to a message
-     */
-    W.WWebJS.replyMessage = async function (chatId: string, text: string, quotedMsgId: string) {
-      const chat = await W.WWebJS._getChat(chatId);
+    W.WWebJS._getQuoteOptions = function (chat: any, quotedMsgId?: string) {
+      if (!quotedMsgId) return {};
       const quoted = W.WWebJS._getMessage(quotedMsgId);
-      if (!chat || !quoted) return null;
-
+      if (!quoted) return {};
       const ReplyUtils = W.require?.('WAWebMsgReply');
-      let quotedMsgOptions = {};
       if (ReplyUtils?.canReplyMsg?.(quoted.unsafe?.())) {
-        quotedMsgOptions = quoted.msgContextInfo?.(chat) || {};
+        return quoted.msgContextInfo?.(chat) || {};
+      }
+      return {};
+    };
+
+    /**
+     * Decode a base64 payload into a File the WhatsApp media pipeline accepts.
+     */
+    W.WWebJS._base64ToFile = function (base64: string, mimetype: string, filename: string) {
+      // Strip an optional data-URI prefix
+      const data = base64.includes(',') ? base64.split(',')[1] : base64;
+      const binary = atob(data);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+      const blob = new Blob([bytes], { type: mimetype });
+      return new File([blob], filename || 'file', { type: mimetype });
+    };
+
+    /**
+     * Run the WhatsApp Web media-prep pipeline (encrypt + upload) and return
+     * the message fields. Throws a descriptive error if the internal modules
+     * are unavailable so callers don't silently send a broken message.
+     */
+    W.WWebJS._prepareMedia = async function (opts: any) {
+      if (!opts?.data) throw new Error('Media data (base64) is required');
+
+      const OpaqueDataMod = W.require?.('WAWebOpaqueData') || W.require?.('WAMediaOpaqueData');
+      const MediaPrepMod = W.require?.('WAWebMediaPrep') || W.require?.('WAMediaPrep');
+      const OpaqueData = OpaqueDataMod?.OpaqueData || OpaqueDataMod?.default || OpaqueDataMod;
+      const MediaPrep = MediaPrepMod?.MediaPrep || MediaPrepMod?.default || MediaPrepMod;
+
+      if (!OpaqueData?.createFromData || !MediaPrep?.prepRawMedia) {
+        throw new Error(
+          'Media upload modules (OpaqueData/MediaPrep) not found in this WhatsApp Web build'
+        );
       }
 
+      const file = W.WWebJS._base64ToFile(opts.data, opts.mimetype, opts.filename);
+      const opaque = await OpaqueData.createFromData(file, file.type);
+      const prep = MediaPrep.prepRawMedia(opaque, {
+        asDocument: opts.type === 'document',
+        isPtt: !!opts.isPtt,
+      });
+      const mediaData = await prep.waitForPrep();
+      // Normalize to plain message fields the send pipeline can merge.
+      return mediaData?.toJSON ? mediaData.toJSON() : mediaData;
+    };
+
+    /**
+     * Send a text message. `options` may include `quotedMsgId` and `mentions`.
+     */
+    W.WWebJS.sendTextMessage = async function (chatId: string, text: string, options?: any) {
+      options = options || {};
+      const chat = await W.WWebJS._getChat(chatId);
+      if (!chat) throw new Error('Chat not found: ' + chatId);
+
+      const quoteOptions = W.WWebJS._getQuoteOptions(chat, options.quotedMsgId);
+
       const result = await W.WWebJS._buildAndSend(chat, {
         type: 'chat',
         body: text,
-        ...quotedMsgOptions,
+        ...(options.mentions?.length ? { mentionedJidList: options.mentions } : {}),
+        ...quoteOptions,
       });
       return result?.serialize?.() || result;
+    };
+
+    /**
+     * Send a media message. `opts` is an object:
+     *   { type, data (base64), mimetype, filename, caption, isPtt,
+     *     lat, lng, name, contactId, contactName, contactIds, poll, quotedMsgId }
+     */
+    W.WWebJS.sendMediaMessage = async function (chatId: string, opts: any) {
+      opts = opts || {};
+      const chat = await W.WWebJS._getChat(chatId);
+      if (!chat) throw new Error('Chat not found: ' + chatId);
+
+      const quoteOptions = W.WWebJS._getQuoteOptions(chat, opts.quotedMsgId);
+
+      let messageData: any;
+
+      switch (opts.type) {
+        case 'location':
+          messageData = {
+            type: 'location',
+            loc: opts.name || '',
+            lat: opts.lat,
+            lng: opts.lng,
+          };
+          break;
+
+        case 'vcard': {
+          const contact = await W.WWebJS._getContact(opts.contactId);
+          const VcardUtils = W.require?.('WAWebFrontendVcardUtils');
+          const vcard = contact ? VcardUtils?.vcardFromContactModel?.(contact) : null;
+          messageData = {
+            type: 'vcard',
+            body: vcard?.vcard || '',
+            vcardFormattedName: opts.contactName || '',
+          };
+          break;
+        }
+
+        case 'vcard_list': {
+          const ids: string[] = opts.contactIds || [];
+          const VcardUtils = W.require?.('WAWebFrontendVcardUtils');
+          const vcards: string[] = [];
+          for (const id of ids) {
+            const contact = await W.WWebJS._getContact(id);
+            const v = contact ? VcardUtils?.vcardFromContactModel?.(contact) : null;
+            if (v?.vcard) vcards.push(v.vcard);
+          }
+          messageData = {
+            type: 'multi_vcard',
+            vcardList: vcards,
+          };
+          break;
+        }
+
+        case 'poll':
+          messageData = {
+            type: 'poll_creation',
+            pollName: opts.poll?.name,
+            pollOptions: (opts.poll?.options || []).map((o: any, i: number) => ({
+              name: o.name,
+              localId: i,
+            })),
+            pollSelectableOptionsCount: opts.poll?.selectableOptionsCount || 0,
+          };
+          break;
+
+        default: {
+          // image / video / audio / document
+          const media = await W.WWebJS._prepareMedia(opts);
+          messageData = {
+            ...media,
+            caption: opts.caption || '',
+            ...(opts.isPtt ? { isPtt: true } : {}),
+          };
+        }
+      }
+
+      const result = await W.WWebJS._buildAndSend(chat, { ...messageData, ...quoteOptions });
+      return result?.serialize?.() || result;
+    };
+
+    /**
+     * Reply to a message (delegates to sendTextMessage with a quote).
+     */
+    W.WWebJS.replyMessage = async function (chatId: string, text: string, quotedMsgId: string) {
+      return W.WWebJS.sendTextMessage(chatId, text, { quotedMsgId });
     };
 
     // ==================== RETRIEVAL ====================
@@ -543,6 +598,14 @@ export async function injectWAPI(page: Page): Promise<void> {
     };
 
     /**
+     * Get a single chat (serialized)
+     */
+    W.WWebJS.getChat = async function (chatId: string) {
+      const chat = await W.WWebJS._getChat(chatId);
+      return chat?.serialize?.() || chat || null;
+    };
+
+    /**
      * Get messages in a chat
      */
     W.WWebJS.getMessagesInChat = function (chatId: string, count: number) {
@@ -554,6 +617,27 @@ export async function injectWAPI(page: Page): Promise<void> {
       function Chat_get(id: string) {
         return W.require?.('WAWebCollections')?.Chat?.get?.(id);
       }
+    };
+
+    // Alias expected by the client wrapper
+    W.WWebJS.getMessages = W.WWebJS.getMessagesInChat;
+
+    /**
+     * Get group admin IDs
+     */
+    W.WWebJS.getGroupAdmins = async function (groupId: string) {
+      const members = await W.WWebJS.getGroupMembers(groupId);
+      return (members || [])
+        .filter((p: any) => p.isAdmin || p.isSuperAdmin)
+        .map((p: any) => p.id?._serialized || p.id || p);
+    };
+
+    /**
+     * Get host phone battery level (best-effort; returns null if unavailable)
+     */
+    W.WWebJS.getBatteryLevel = function () {
+      const Conn = W.require?.('WAWebConnModel')?.Conn;
+      return typeof Conn?.battery === 'number' ? Conn.battery : null;
     };
 
     /**
@@ -657,27 +741,43 @@ export async function injectWAPI(page: Page): Promise<void> {
     /**
      * Delete a message
      */
-    W.WWebJS.deleteMessage = async function (chatId: string, msgId: string, everyone: boolean) {
+    W.WWebJS.deleteMessage = async function (
+      chatId: string,
+      msgIds: string | string[],
+      everyone: boolean
+    ) {
       const DeleteAction = W.require?.('WAWebDeleteMessagesAction');
       const chat = await W.WWebJS._getChat(chatId);
-      const msg = W.WWebJS._getMessage(msgId);
-      if (!chat || !msg || !DeleteAction) return;
+      if (!chat || !DeleteAction) return;
+
+      const ids = Array.isArray(msgIds) ? msgIds : [msgIds];
+      const msgs = ids.map((id) => W.WWebJS._getMessage(id)).filter(Boolean);
+      if (!msgs.length) return;
+
       if (everyone) {
-        return DeleteAction.revokeMessages?.(chat, [msg]);
-      } else {
-        return DeleteAction.deleteMessages?.(chat, [msg]);
+        return DeleteAction.revokeMessages?.(chat, msgs);
       }
+      return DeleteAction.deleteMessages?.(chat, msgs);
     };
 
     /**
-     * Block/unblock contact
+     * Block a contact
      */
-    W.WWebJS.blockContact = async function (contactId: string, block: boolean) {
+    W.WWebJS.blockContact = async function (contactId: string) {
       const BlockAction = W.require?.('WAWebBlockContactAction');
       const contact = await W.WWebJS._getContact(contactId);
       if (!contact || !BlockAction) return;
-      if (block) return BlockAction.blockContact?.(contact);
-      else return BlockAction.unblockContact?.(contact);
+      return BlockAction.blockContact?.(contact);
+    };
+
+    /**
+     * Unblock a contact
+     */
+    W.WWebJS.unblockContact = async function (contactId: string) {
+      const BlockAction = W.require?.('WAWebBlockContactAction');
+      const contact = await W.WWebJS._getContact(contactId);
+      if (!contact || !BlockAction) return;
+      return BlockAction.unblockContact?.(contact);
     };
 
     /**
@@ -737,6 +837,19 @@ export async function injectWAPI(page: Page): Promise<void> {
       const chat = await W.WWebJS._getChat(chatId);
       if (!chat || !ChatState) return;
       return ChatState.sendChatState?.(chat, state);
+    };
+
+    /**
+     * Start/stop the "typing…" indicator
+     */
+    W.WWebJS.setTyping = async function (chatId: string, on: boolean) {
+      const ChatState = W.require?.('WAWebChatStateAction');
+      const chat = await W.WWebJS._getChat(chatId);
+      if (!chat || !ChatState) return;
+      if (on) {
+        return (ChatState.sendChatStateComposing || ChatState.sendChatState)?.(chat);
+      }
+      return (ChatState.sendChatStatePaused || ChatState.sendChatState)?.(chat);
     };
 
     /**

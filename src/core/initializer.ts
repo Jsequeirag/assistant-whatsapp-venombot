@@ -130,26 +130,34 @@ export async function create(
     let authenticated = false;
     let currentQRResolve: (() => void) | null = null;
 
-    // Set up auth state listener
+    // Set up auth state listener. The resolvers are captured outside the
+    // executor so the exposed browser callbacks can settle the promise.
+    let authResolve!: () => void;
+    let authReject!: (err: Error) => void;
     const authPromise = new Promise<void>((resolve, reject) => {
-      // Global timeout (5 minutes total)
-      const globalTimeout = setTimeout(() => {
-        if (!authenticated) reject(new Error('Authentication timeout (5 min)'));
-      }, 5 * 60 * 1000);
+      authResolve = resolve;
+      authReject = reject;
+    });
 
-      page.exposeFunction('_venomOnAuthStateChange', (state: string) => {
-        log.info(`Auth state: ${state}`);
-        if (state === 'CONNECTED' || state === 'SYNCING' || state === 'OPENING') {
-          authenticated = true;
-          clearTimeout(globalTimeout);
-          if (currentQRResolve) currentQRResolve();
-          resolve();
-        }
-      });
+    // Global timeout (5 minutes total)
+    const globalTimeout = setTimeout(() => {
+      if (!authenticated) authReject(new Error('Authentication timeout (5 min)'));
+    }, 5 * 60 * 1000);
+
+    // Expose callbacks and AWAIT them before installing the page hooks, so the
+    // functions are registered by the time WhatsApp Web invokes them.
+    await page.exposeFunction('_venomOnAuthStateChange', (state: string) => {
+      log.info(`Auth state: ${state}`);
+      if (state === 'CONNECTED' || state === 'SYNCING' || state === 'OPENING') {
+        authenticated = true;
+        clearTimeout(globalTimeout);
+        if (currentQRResolve) currentQRResolve();
+        authResolve();
+      }
     });
 
     // Expose QR change callback
-    page.exposeFunction('_venomOnQRChanged', (qr: string) => {
+    await page.exposeFunction('_venomOnQRChanged', (qr: string) => {
       qrRetries++;
       log.info(`QR Code ready (attempt ${qrRetries})`);
 
@@ -199,7 +207,8 @@ export async function create(
           const noiseKeyPair = await NoiseInfo.get();
           const staticKeyB64 = Base64.encodeB64(noiseKeyPair.staticKeyPair.pubKey);
           const identityKeyB64 = Base64.encodeB64(registrationInfo.identityKeyPair.pubKey);
-          const advSecretKey = MultiDevice.getADVSecretKey();
+          // getADVSecretKey is async — without await the QR string would be malformed
+          const advSecretKey = await MultiDevice.getADVSecretKey();
 
           let platform = '';
           try {
@@ -292,6 +301,21 @@ export async function create(
   // Attach event listeners
   await attachEventListeners(page, client);
 
+  // WhatsApp Web occasionally reloads the page, which wipes the injected
+  // window.WWebJS layer and the event hooks. Re-inject them on navigation.
+  page.on('framenavigated', async (frame) => {
+    if (frame !== page.mainFrame()) return;
+    try {
+      const ready = await waitForReady(page, 30000);
+      if (!ready) return;
+      await injectWAPI(page);
+      await injectEventHooks(page);
+      log.info('Re-injected WAPI after page navigation');
+    } catch (err) {
+      log.warn(`Failed to re-inject after navigation: ${(err as Error).message}`);
+    }
+  });
+
   client._setReady(true);
   statusCallback?.('successChat', session);
   log.info('Client ready!');
@@ -351,9 +375,20 @@ async function attachEventListeners(page: Page, client: VenomClient): Promise<vo
     client.emit('disconnected', 'LOGOUT');
   });
 
-  // Inject event hooks into WhatsApp Web — resilient
+  // Install the in-page event hooks (extracted so they can be re-installed
+  // after WhatsApp Web reloads the page).
+  await injectEventHooks(page);
+}
+
+/**
+ * Install (or re-install) the WhatsApp Web event hooks in the page context.
+ * Guards against double installation within the same document.
+ */
+async function injectEventHooks(page: Page): Promise<void> {
   await page.evaluate(() => {
     const W = window as any;
+    if (W._venomHooksInstalled) return;
+    W._venomHooksInstalled = true;
 
     function safeOn(obj: any, event: string, handler: Function) {
       if (obj && typeof obj.on === 'function') {

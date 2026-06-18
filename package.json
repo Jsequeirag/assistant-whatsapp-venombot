@@ -9,7 +9,9 @@
     "dev": "tsc -w",
     "clean": "rm -rf dist",
     "prepare": "npm run clean && npm run build",
-    "postinstall": "node scripts/download-chromium.js"
+    "postinstall": "node scripts/download-chromium.js",
+    "bot": "node bot/index.js",
+    "start:bot": "npm run build && node bot/index.js"
   },
   "repository": {
     "type": "git",
