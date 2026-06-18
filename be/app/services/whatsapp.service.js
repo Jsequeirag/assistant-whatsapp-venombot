@@ -98,4 +98,16 @@ function getClient() {
   return _client;
 }
 
-module.exports = { start, restart, getStatus, getClient };
+/**
+ * Envía un texto a un contacto desde el panel (Fase 5 — responder desde la app).
+ * Lanza si no hay sesión conectada o si el envío falla, para que el controlador
+ * pueda devolver un error claro al frontend.
+ */
+async function sendText(contactId, text) {
+  if (!_client || _state !== "connected") {
+    throw new Error("WhatsApp no está conectado");
+  }
+  return _client.sendText(contactId, text);
+}
+
+module.exports = { start, restart, getStatus, getClient, sendText };

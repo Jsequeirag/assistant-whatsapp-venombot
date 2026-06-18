@@ -56,4 +56,11 @@ async function listGroqModels(req, res) {
   }
 }
 
-module.exports = { get, updateDnd, updateSleep, updateAutoAssist, updateIdentity, updateGroq, listGroqModels };
+async function updateRetention(req, res) {
+  const { days } = req.body;
+  await modeService.updateRetention({ days });
+  const settings = await modeService.getSettings();
+  res.json(settings.retention);
+}
+
+module.exports = { get, updateDnd, updateSleep, updateAutoAssist, updateIdentity, updateGroq, listGroqModels, updateRetention };

@@ -1,18 +1,18 @@
 import { useState } from "react";
-import Recados from "./views/Recados";
+import Conversaciones from "./views/Conversaciones";
 import Contacts from "./views/Contacts";
 import Settings from "./views/Settings";
 import Estado from "./views/Estado";
 
 const TABS = [
-  { id: "recados", label: "Recados" },
+  { id: "conversaciones", label: "Conversaciones" },
   { id: "contacts", label: "Contactos" },
   { id: "settings", label: "Configuración" },
   { id: "estado", label: "Estado" },
 ];
 
 export default function App() {
-  const [tab, setTab] = useState("recados");
+  const [tab, setTab] = useState("conversaciones");
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -40,7 +40,7 @@ export default function App() {
       </header>
 
       <main className="max-w-2xl mx-auto px-4 py-6">
-        {tab === "recados" && <Recados />}
+        {tab === "conversaciones" && <Conversaciones />}
         {tab === "contacts" && <Contacts />}
         {tab === "settings" && <Settings />}
         {tab === "estado" && <Estado />}

@@ -65,6 +65,7 @@ async function getSettings() {
       hasKey: !!s.groq?.apiKey,
       keyMasked: maskKey(s.groq?.apiKey),
     },
+    retention: { days: s.retention?.days ?? 30 },
   };
 }
 
@@ -118,6 +119,20 @@ async function updateIdentity({ ownerName, assistantName }) {
   if (Object.keys(update).length) await Settings.updateOne({}, { $set: update });
 }
 
+async function updateRetention({ days }) {
+  if (days === undefined) return;
+  // Clamp a un entero >= 0 (0 = nunca borrar).
+  const n = Math.max(0, Math.floor(Number(days) || 0));
+  await getOrCreateSettings();
+  await Settings.updateOne({}, { $set: { "retention.days": n } });
+}
+
+/** Días de retención configurados (0 = deshabilitado). */
+async function getRetentionDays() {
+  const s = await getOrCreateSettings();
+  return s.retention?.days ?? 30;
+}
+
 module.exports = {
   getPresence,
   getGroqConfig,
@@ -130,4 +145,6 @@ module.exports = {
   updateSleep,
   updateAutoAssist,
   updateIdentity,
+  updateRetention,
+  getRetentionDays,
 };

@@ -22,6 +22,11 @@ const settingsSchema = new Schema({
     apiKey: { type: String, default: "" },
     model: { type: String, default: "qwen/qwen3-32b" },
   },
+  // Retención de datos: recados y mensajes más viejos que `days` se borran (ahorro de espacio).
+  // 0 = nunca borrar (deshabilitado).
+  retention: {
+    days: { type: Number, default: 30 },
+  },
 });
 
 module.exports = model("Settings", settingsSchema);

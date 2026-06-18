@@ -127,7 +127,10 @@ Mensaje entrante
           respondedContacts: [String] },  // $addToSet / reset al desactivar
   sleep: { active: Boolean, prompt: String,
            respondedContacts: [String] },
-  autoAssist: { globalEnabled: Boolean }
+  autoAssist: { globalEnabled: Boolean },
+  identity: { ownerName: String, assistantName: String },
+  groq: { apiKey: String, model: String },
+  retention: { days: Number }   // 0 = nunca borrar; default 30
 }
 ```
 
@@ -148,6 +151,7 @@ Mensaje entrante
 | PATCH | `/api/settings/dnd` | Activar/desactivar DND + razón + prompt |
 | PATCH | `/api/settings/sleep` | Activar/desactivar modo dormir + prompt |
 | PATCH | `/api/settings/auto-assist` | Switch global auto-asistir |
+| PATCH | `/api/settings/retention` | Días de retención de recados/mensajes (0 = no borrar) |
 
 ### Contacts
 | Método | Ruta | Descripción |
@@ -199,23 +203,44 @@ Mensaje entrante
 - [ ] Primer escaneo QR (desde la pestaña Estado del panel, o consola); sesión guardada en `tokens/`
 - [ ] `.env` de producción con `NODE_ENV=production`
 
-### Fase 5 — Vista conversacional / Chat con hilos 🔲 (futuro)
-Hoy los recados se muestran como una lista plana. La idea a futuro es organizarlos por
-conversación y, eventualmente, poder responder desde la app.
+### Fase 5 — Vista conversacional / Chat con hilos ✅
+Los recados ya no son solo una lista plana: hay una vista "Conversaciones" que los agrupa
+por contacto y muestra el hilo completo de mensajes, con respuesta desde la app.
 
-- [ ] **Agrupar recados por contacto** (por `contactId` / nombre) en vez de lista plana.
-      Cada contacto muestra su último recado + contador; al expandir, se ve la conversación.
-- [ ] **Vista expandible por contacto**: timeline de los recados de esa persona, ordenado
-      cronológicamente, con prioridad y mensaje original visibles. UI tipo chat (burbujas).
-- [ ] **Preparar el terreno para "threaded chat"** (chat con hilos):
-      - Persistir el historial de mensajes por contacto (no solo los recados), p. ej. un
-        modelo `Message { contactId, role: "user"|"assistant", content, timestamp }`.
-        Actualmente el historial vive solo en memoria (`contact.service.js` → sessionState).
+- [x] **Agrupar recados por contacto** (por `contactId`) en la vista "Conversaciones".
+      Cada contacto muestra su último recado + contador de no leídos + prioridad más alta;
+      al expandir, se ve la conversación. (`fe/src/views/Conversaciones.jsx`)
+- [x] **Vista expandible por contacto**: timeline de mensajes ordenado cronológicamente,
+      UI tipo chat (burbujas: entrante a la izquierda, asistente a la derecha). Los recados
+      del contacto se listan arriba con prioridad. Los salientes indican si fueron `🤖 auto`
+      o `✍️ manual`.
+- [x] **Threaded chat persistente**:
+      - Modelo `Message { contactId, contactName, role: "user"|"assistant", content, via, timestamps }`
+        (`app/models/Message.js`) + `app/services/message.service.js`.
+      - El webhook persiste TODOS los mensajes (entrantes y salientes), no solo los recados.
+        El historial in-memory (`contact.service.js` → sessionState) se mantiene para contexto del LLM.
       - Endpoint `GET /api/contacts/:id/messages` para traer la conversación.
-  - [ ] **Responder desde la app** (fase posterior): input de respuesta en la vista de
-        conversación que envíe vía WhatsApp (`client.sendText`) a ese contacto. Requiere
-        exponer el envío desde `whatsapp.service` y un endpoint `POST /api/contacts/:id/reply`.
-      > Nota: por ahora solo se documenta. NO implementar aún el envío manual ni el modelo Message.
+  - [x] **Responder desde la app**: input de respuesta en la vista de conversación que envía
+        vía WhatsApp. `whatsapp.service.sendText()` + `POST /api/contacts/:id/reply` (persiste
+        el mensaje con `via: "manual"` y lo agrega al historial in-memory).
+
+#### Endpoints nuevos (Fase 5)
+| Método | Ruta | Descripción |
+|---|---|---|
+| GET | `/api/contacts/:id/messages` | Historial conversacional del contacto (orden cronológico) |
+| POST | `/api/contacts/:id/reply` | Envía un mensaje de WhatsApp al contacto desde el panel |
+
+#### Refinamientos posteriores (Fase 5.1)
+- [x] **Recados fusionados en Conversaciones**: se eliminó la pestaña "Recados". Dentro de cada
+      contacto se ven sus recados con nivel de importancia + interpretación de la IA (por defecto),
+      con un **toggle general por contacto** "Ver mensajes originales" (no uno por uno) y botón de
+      marcar leído/sin leído. "Conversaciones" es ahora la pestaña por defecto.
+- [x] **Retención de datos configurable**: `settings.retention.days` (UI en Configuración con
+      atajos 1/2/7/30/90 días; 0 = no borrar). Scheduler en `bot/index.js` (`cleanup.service.js`)
+      corre al arrancar y cada 12h: borra recados y mensajes más viejos que los días configurados,
+      para ahorrar espacio en la DB. El scheduler de health-check de servicios (24h) queda intacto.
+- [x] **Emoji picker** (`fe/src/components/EmojiPicker.jsx`, sin dependencias) en los campos de
+      motivo/contexto de DND y modo dormir.
 
 ---
 

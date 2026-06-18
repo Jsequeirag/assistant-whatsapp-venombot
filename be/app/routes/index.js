@@ -19,6 +19,7 @@ router.patch("/settings/auto-assist", settings.updateAutoAssist)
 router.patch("/settings/identity", settings.updateIdentity);
 router.patch("/settings/groq", settings.updateGroq);
 router.get("/settings/groq/models", settings.listGroqModels);
+router.patch("/settings/retention", settings.updateRetention);
 
 // ─── Auditoría de servicios ────────────────────────────────────────────────────
 router.get("/audit", audit.list);
@@ -34,5 +35,7 @@ router.post("/contacts", contacts.create);
 router.patch("/contacts/:id", contacts.update);
 router.patch("/contacts/:id/auto-assist", contacts.toggleAutoAssist);
 router.delete("/contacts/:id", contacts.remove);
+router.get("/contacts/:id/messages", contacts.getMessages);
+router.post("/contacts/:id/reply", contacts.reply);
 
 module.exports = router;

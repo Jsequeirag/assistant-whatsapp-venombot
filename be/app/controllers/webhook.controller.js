@@ -1,6 +1,7 @@
 const modeService = require("../services/mode.service");
 const contactService = require("../services/contact.service");
 const recadoService = require("../services/recado.service");
+const messageService = require("../services/message.service");
 const llmService = require("../services/llm.service");
 
 const IGNORED_SENDERS = ["status@broadcast", "broadcast"];
@@ -18,9 +19,13 @@ function setHostId(id) {
  * Envía un texto y registra el resultado. Si falla (ej. destino @lid no enviable),
  * lo deja visible en consola en vez de romper el flujo silenciosamente.
  */
-async function safeSend(client, contactId, text, label) {
+async function safeSend(client, contactId, text, label, contactName = "") {
   try {
     await client.sendText(contactId, text);
+    // Persistir el saliente en el historial conversacional (Fase 5). No bloquea el envío.
+    messageService
+      .save({ contactId, contactName, role: "assistant", content: text, via: "auto" })
+      .catch((e) => console.error(`⚠️  No se pudo persistir mensaje saliente: ${e?.message || e}`));
     return true;
   } catch (err) {
     console.error(`❌ Falló envío [${label}] a ${contactId}: ${err?.message || err}`);
@@ -107,6 +112,12 @@ async function processMessage(client, msg) {
   const number = contactId.replace(/@.+$/, "");
   console.log(`💬 [${new Date().toLocaleTimeString("es")}] ${contact.name} <${contactId}>: ${messageText.slice(0, 80)}`);
 
+  // Persistir el mensaje entrante en el historial conversacional (Fase 5), siempre,
+  // independientemente de si el bot responde o guarda recado. No bloquea el flujo.
+  messageService
+    .save({ contactId, contactName: contact.name, role: "user", content: messageText })
+    .catch((e) => console.error(`⚠️  No se pudo persistir mensaje entrante: ${e?.message || e}`));
+
   // ─── Reset por inactividad (>20 min) → tratar como primera vez ─────────────
   if (contactService.isSessionExpired(contactId, SESSION_RESET_MS)) {
     contactService.resetSession(contactId);
@@ -153,8 +164,8 @@ async function processMessage(client, msg) {
   if (!appropriate) {
     console.log(`🚫 Contenido inapropiado bloqueado de ${contact.name}: [${contentType}]`);
     if (contactAssist) {
-      const decline = `Hola, soy ${assistantName}, el asistente virtual de ${ownerName}. Lo siento, no puedo responder a ese tipo de contenido. Si deseas dejar un recado para ${ownerName}, con gusto te ayudo.`;
-      await safeSend(client, contactId, decline, "decline");
+      const decline = `Hola, soy ${assistantName}, el asistente de ${ownerName}. Lo siento, no puedo responder a ese tipo de contenido. Si deseas dejar un recado para ${ownerName}, con gusto te ayudo.`;
+      await safeSend(client, contactId, decline, "decline", contact.name);
     }
     return;
   }
@@ -181,7 +192,7 @@ async function processMessage(client, msg) {
   if (!alreadyGreeted) {
     const greetMode = status === "available" ? "assist" : status;
     const greeting = await generateModeResponse(greetMode, ownerName, assistantName, statusReason, messageText);
-    const sent = await safeSend(client, contactId, greeting, `saludo:${status}`);
+    const sent = await safeSend(client, contactId, greeting, `saludo:${status}`, contact.name);
     if (!sent) return; // si no se pudo enviar, no marcamos como saludado (reintenta luego)
     if (greetingTracked) await modeService.markResponded(status, contactId);
     session.greetedOnce = true;
@@ -216,7 +227,7 @@ async function processMessage(client, msg) {
     .catch(() => null);
 
   if (response) {
-    await safeSend(client, contactId, response, "auto-assist");
+    await safeSend(client, contactId, response, "auto-assist", contact.name);
     contactService.addToHistory(contactId, "model", response);
     console.log(`🤖 Auto-asistir: respondí a ${contact.name}`);
   }
@@ -238,7 +249,7 @@ async function processMessage(client, msg) {
  * Consistente entre contactos, sin llamar a la IA.
  */
 function defaultModeMessage(mode, ownerName, assistantName) {
-  const intro = `Hola 👋 Soy ${assistantName}, el asistente virtual de ${ownerName}.`;
+  const intro = `Hola 👋 Soy ${assistantName}, el asistente de ${ownerName}.`;
   if (mode === "sleep") {
     return `${intro} En este momento ${ownerName} está descansando y no se encuentra disponible. Puedes dejarle un recado y lo verá mañana a partir de las 8:00 am. 🌙`;
   }
@@ -267,24 +278,34 @@ IMPORTANTE: NO copies el contexto textualmente. Interpretalo y redactalo en terc
 Mencioná que verá el mensaje mañana a partir de las 8:00 am.`,
   };
 
-  const systemPrompt = `Eres ${assistantName}, el asistente virtual de ${ownerName}.
+  const systemPrompt = `Eres ${assistantName}, el asistente personal de ${ownerName}.
 Generá UN mensaje de WhatsApp de bienvenida para alguien que le escribió a ${ownerName}.
 
 Situación: ${modeContext[mode]}
 
 El mensaje debe:
-- Presentarte como "${assistantName}, el asistente virtual de ${ownerName}"
+- Presentarte como "${assistantName}, el asistente de ${ownerName}". Sos ${assistantName}, NO sos ${ownerName}.
+- Reconocer de forma breve y natural lo que la persona escribió y responder relacionado a eso
+  (ej.: si avisa que enviará algo, agradecé y decí que tomás nota; si pregunta algo, indicá que
+  le harás llegar la consulta a ${ownerName}). NO te comprometas en nombre de ${ownerName},
+  NO confirmes acciones de ${ownerName} ni inventes información.
 - Explicar la situación de ${ownerName} de forma natural, empática y en tercera persona
-- Usar 1 o 2 emojis relevantes y naturales (👋 🌙 ✈️ 🍽️ 📝 etc.)
-- Invitar a dejar un recado
-- Ser conciso, amigable y en el mismo idioma que el mensaje recibido
+- Cerrar invitando a dejar el mensaje/recado, dejando claro que ${ownerName} se pondrá en
+  contacto en cuanto pueda (ej.: "deja tu mensaje y él se pondrá en contacto contigo")
+- Sonar humano y cercano: variá el fraseo (NO uses siempre la misma plantilla) y ajustá el tono,
+  la formalidad y los emojis al estilo de quien escribe (1 o 2 emojis naturales: 👋 🌙 ✈️ 🍽️ 📝 etc.)
+- Ser conciso (2-3 frases), amigable y en el mismo idioma que el mensaje recibido
 
-Mensaje recibido: "${messageText.slice(0, 200)}"
+Si la persona pregunta directamente si sos un bot, una IA o una persona real: NO afirmes ser humano
+y NO te declares un bot/IA; respondé con naturalidad que sos ${assistantName}, quien ayuda a
+${ownerName} con sus mensajes, y seguí con lo que necesita.
+
+Mensaje recibido (respondé relacionado a su contenido): "${messageText.slice(0, 300)}"
 Respondé ÚNICAMENTE con el mensaje, sin comillas ni prefijos.`;
 
   try {
-    // Temperatura baja → saludo consistente (sigue siendo natural)
-    return await llmService.generateResponse(systemPrompt, [], messageText, { temperature: 0.3 });
+    // Temperatura media → variedad natural en el fraseo (evita plantilla repetida)
+    return await llmService.generateResponse(systemPrompt, [], messageText, { temperature: 0.6 });
   } catch {
     return defaultModeMessage(mode, ownerName, assistantName);
   }
@@ -293,16 +314,22 @@ Respondé ÚNICAMENTE con el mensaje, sin comillas ni prefijos.`;
 function buildAutoAssistPrompt(ownerName, assistantName, isFirstMessage) {
   const intro = isFirstMessage
     ? `IMPORTANTE: Es el PRIMER mensaje. Presentate así (adaptá el idioma si es necesario, usá 1 o 2 emojis naturales):
-"Hola 👋 Soy ${assistantName}, el asistente virtual de ${ownerName}. En este momento no está disponible, pero estoy aquí para ayudarte. ¿Deseas dejarle un recado o hay algo en lo que pueda asistirte?"
+"Hola 👋 Soy ${assistantName}, el asistente de ${ownerName}. En este momento no está disponible, pero estoy aquí para ayudarte. ¿Deseas dejarle un recado o hay algo en lo que pueda asistirte?"
 Luego continuá la conversación con normalidad.\n\n`
     : "";
 
-  return `${intro}Eres ${assistantName}, el asistente virtual de ${ownerName}. NO eres ${ownerName}.
-Dejá siempre claro que eres un asistente y que ${ownerName} no está disponible ahora.
-Tu objetivo: conversar amablemente, entender qué necesita el contacto y, cuando ya comunicó su recado,
-cerrar con cortesía (ej: "¡Entendido! Le aviso a ${ownerName} en cuanto pueda.").
+  return `${intro}Eres ${assistantName}, el asistente personal de ${ownerName}. Sos ${assistantName}, NO sos ${ownerName}.
+Ya te presentaste como ${assistantName} en el primer mensaje: NO vuelvas a presentarte ni repitas
+en cada mensaje que sos asistente; hablá con naturalidad como lo haría un asistente real.
+Tu objetivo: conversar de forma cálida y humana, entender qué necesita el contacto y, cuando ya
+comunicó su recado, cerrar con cortesía (ej: "¡Entendido! Le aviso a ${ownerName} en cuanto pueda.").
+Mostrá empatía y respondé al contexto de lo que dice la persona. Variá el fraseo (no suenes a plantilla)
+y ajustá el tono, la formalidad y los emojis al estilo de quien escribe.
 Sé conciso. Respondé en el mismo idioma que usa la persona.
-No inventes información ni hagas promesas de tiempo.
+NO te comprometas en nombre de ${ownerName} ni confirmes acciones suyas; no inventes información ni hagas promesas de tiempo.
+Si la persona pregunta directamente si sos un bot, una IA o una persona real: NO afirmes ser humano
+y NO te declares un bot/IA; respondé con naturalidad que sos ${assistantName}, quien ayuda a ${ownerName},
+y seguí con lo que necesita.
 Si el mensaje contiene contenido vulgar, violento, sexual, amenazas u ofensivo, decliná educadamente
 sin entrar en el tema: "Lo siento, no puedo responder a ese tipo de contenido."`;
 }

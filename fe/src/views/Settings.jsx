@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { api } from "../api/client";
+import EmojiPicker from "../components/EmojiPicker";
 
 function Toggle({ checked, onChange, label }) {
   return (
@@ -59,6 +60,7 @@ export default function Settings() {
   const [dnd, setDnd] = useState({ active: false, reason: "" });
   const [sleep, setSleep] = useState({ active: false });
   const [autoAssist, setAutoAssist] = useState({ globalEnabled: false, reason: "" });
+  const [retention, setRetention] = useState({ days: 30 });
   const [saved, setSaved] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -68,6 +70,7 @@ export default function Settings() {
       setDnd(s.dnd);
       setSleep(s.sleep);
       setAutoAssist(s.autoAssist);
+      if (s.retention) setRetention(s.retention);
       setLoading(false);
     });
   }, []);
@@ -81,6 +84,7 @@ export default function Settings() {
   const saveDnd = async () => { await api.updateDnd(dnd); notify("dnd"); };
   const saveSleep = async () => { await api.updateSleep(sleep); notify("sleep"); };
   const saveAutoAssist = async () => { await api.updateAutoAssist(autoAssist); notify("autoAssist"); };
+  const saveRetention = async () => { const r = await api.updateRetention(retention.days); setRetention(r); notify("retention"); };
 
   if (loading) return <p className="text-center text-gray-400 py-12">Cargando...</p>;
 
@@ -125,13 +129,16 @@ export default function Settings() {
           label="Motivo"
           hint="La IA adapta el mensaje según esto. Ej: 'en una reunión', 'almorzando', 'de viaje hasta el viernes'."
         >
-          <input
-            type="text"
-            value={dnd.reason}
-            onChange={(e) => setDnd({ ...dnd, reason: e.target.value })}
-            placeholder="ej: en una reunión"
-            className={inputCls}
-          />
+          <div className="flex items-start gap-2">
+            <input
+              type="text"
+              value={dnd.reason}
+              onChange={(e) => setDnd({ ...dnd, reason: e.target.value })}
+              placeholder="ej: en una reunión"
+              className={inputCls}
+            />
+            <EmojiPicker onPick={(emo) => setDnd((d) => ({ ...d, reason: `${d.reason}${emo}` }))} />
+          </div>
         </Field>
         <SaveButton onClick={saveDnd} saved={saved === "dnd"} />
       </Card>
@@ -147,13 +154,16 @@ export default function Settings() {
           label="Motivo / contexto"
           hint="La IA adapta el mensaje según esto. Si está vacío, usará 'descansando'. Ej: 'durmiendo', 'es tarde y ya no atiendo hasta mañana'."
         >
-          <input
-            type="text"
-            value={sleep.reason}
-            onChange={(e) => setSleep({ ...sleep, reason: e.target.value })}
-            placeholder="ej: descansando"
-            className={inputCls}
-          />
+          <div className="flex items-start gap-2">
+            <input
+              type="text"
+              value={sleep.reason}
+              onChange={(e) => setSleep({ ...sleep, reason: e.target.value })}
+              placeholder="ej: descansando"
+              className={inputCls}
+            />
+            <EmojiPicker onPick={(emo) => setSleep((s) => ({ ...s, reason: `${s.reason || ""}${emo}` }))} />
+          </div>
         </Field>
         <SaveButton onClick={saveSleep} saved={saved === "sleep"} />
       </Card>
@@ -169,6 +179,42 @@ export default function Settings() {
           Activá por contacto individualmente en la pestaña Contactos.
         </p>
         <SaveButton onClick={saveAutoAssist} saved={saved === "autoAssist"} />
+      </Card>
+
+      {/* Retención de datos */}
+      <Card title="🧹 Retención de datos">
+        <Field
+          label="Días que duran recados y conversaciones"
+          hint="Cuando un recado o mensaje supera estos días, se borra automáticamente para ahorrar espacio. 0 = no borrar nunca."
+        >
+          <div className="flex items-center gap-2">
+            <input
+              type="number"
+              min="0"
+              value={retention.days}
+              onChange={(e) => setRetention({ days: e.target.value })}
+              className={`${inputCls} w-28`}
+            />
+            <span className="text-sm text-gray-500">días</span>
+          </div>
+        </Field>
+        <div className="flex flex-wrap gap-2">
+          {[1, 2, 7, 30, 90].map((d) => (
+            <button
+              key={d}
+              type="button"
+              onClick={() => setRetention({ days: d })}
+              className={`px-3 py-1 rounded-full text-xs transition-colors ${
+                Number(retention.days) === d
+                  ? "bg-gray-900 text-white"
+                  : "bg-white text-gray-500 border border-gray-200 hover:border-gray-400"
+              }`}
+            >
+              {d} {d === 1 ? "día" : "días"}
+            </button>
+          ))}
+        </div>
+        <SaveButton onClick={saveRetention} saved={saved === "retention"} />
       </Card>
     </div>
   );

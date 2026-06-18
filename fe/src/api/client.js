@@ -23,6 +23,7 @@ export const api = {
   updateIdentity: (data) => request("PATCH", "/settings/identity", data),
   updateGroq: (data) => request("PATCH", "/settings/groq", data),
   getGroqModels: () => request("GET", "/settings/groq/models"),
+  updateRetention: (days) => request("PATCH", "/settings/retention", { days }),
 
   // Auditoría de servicios
   getAudit: () => request("GET", "/audit"),
@@ -39,4 +40,8 @@ export const api = {
   deleteContact: (contactId) => request("DELETE", `/contacts/${encodeURIComponent(contactId)}`),
   toggleAutoAssist: (contactId, enabled) =>
     request("PATCH", `/contacts/${encodeURIComponent(contactId)}/auto-assist`, { enabled }),
+
+  // Conversaciones (Fase 5)
+  getMessages: (contactId) => request("GET", `/contacts/${encodeURIComponent(contactId)}/messages`),
+  reply: (contactId, text) => request("POST", `/contacts/${encodeURIComponent(contactId)}/reply`, { text }),
 };
