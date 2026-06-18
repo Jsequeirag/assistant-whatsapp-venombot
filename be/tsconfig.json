@@ -1,0 +1,20 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "node16",
+    "lib": ["ES2022", "DOM"],
+    "declaration": true,
+    "sourceMap": true,
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "strict": false,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "moduleResolution": "node16",
+    "types": ["node", "qrcode-terminal", "mime-types", "ws"]
+  },
+  "include": ["src/index.ts", "src/config.ts", "src/core/**/*", "src/controllers/browser.ts", "src/utils/logger.ts"],
+  "exclude": ["node_modules", "dist", "scripts", "img"]
+}
