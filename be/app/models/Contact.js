@@ -6,6 +6,7 @@ const contactSchema = new Schema(
     number: { type: String, required: true },
     name: { type: String, default: "" },
     autoAssist: { type: Boolean, default: false },
+    avatarUrl: { type: String, default: "" }, // URL de DiceBear generada del nombre
   },
   { timestamps: true }
 );

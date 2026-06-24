@@ -1,6 +1,6 @@
 const QRCode = require("qrcode");
 const venom = require("../../dist");
-const { processMessage, setHostId } = require("../controllers/webhook.controller");
+const { processMessage, setHostId, registerSelfId } = require("../controllers/webhook.controller");
 const auditService = require("./audit.service");
 
 const SESSION = process.env.VENOM_SESSION || "aria";
@@ -53,11 +53,16 @@ async function start() {
     console.log("✅ Aria conectada a WhatsApp. Esperando mensajes...");
     auditService.recordWhatsApp("ok", `Sesión "${SESSION}" conectada`);
 
-    // Captura el número propio (host) para no responderse a sí mismo.
+    // Captura los IDs propios (host) para no responderse a sí mismo. En multi-dispositivo
+    // el host tiene número (@c.us) y a veces un LID (@lid); registramos AMBOS porque los
+    // auto-mensajes pueden llegar en cualquiera de los dos formatos.
     try {
       const host = await _client.getHostDevice();
       const wid = host?.wid || host?.me?._serialized || host?.id?._serialized || null;
       if (wid) setHostId(typeof wid === "string" ? wid : wid._serialized || null);
+      const lid =
+        host?.lid?._serialized || host?.lid || host?.id?.lid?._serialized || host?.id?.lid || host?.me?.lid?._serialized || null;
+      if (lid && typeof lid === "string") registerSelfId(lid);
     } catch (e) {
       console.warn("No se pudo obtener el número del host:", e.message);
     }
@@ -110,4 +115,97 @@ async function sendText(contactId, text) {
   return _client.sendText(contactId, text);
 }
 
-module.exports = { start, restart, getStatus, getClient, sendText };
+async function sendFileBase64(contactId, { base64, filename, mimetype, caption }) {
+  if (!_client || _state !== "connected") {
+    throw new Error("WhatsApp no está conectado");
+  }
+
+  const fs = require("fs");
+  const path = require("path");
+  const os = require("os");
+
+  // Escribir a archivo temporal → venom lo lee con fs.readFileSync y lo sube
+  // sin pasar el base64 completo por page.evaluate (más estable con archivos grandes)
+  const safeName = filename.replace(/[^a-z0-9._-]/gi, "_");
+  const tmpPath = path.join(os.tmpdir(), `aria_${Date.now()}_${safeName}`);
+
+  try {
+    fs.writeFileSync(tmpPath, Buffer.from(base64, "base64"));
+    const isImage = (mimetype || "").startsWith("image/");
+    console.log(`📤  Enviando ${isImage ? "imagen" : "archivo"}: ${filename} (${fs.statSync(tmpPath).size} bytes) → ${contactId}`);
+
+    // Parchear _prepareMedia en el browser buscando los módulos reales de webpack
+    await _client.page.evaluate(() => {
+      const W = window;
+      let OD = null, MP = null;
+
+      const testObj = (v) => {
+        if (!OD && v && typeof v.createFromData === "function") OD = v;
+        if (!MP && v && typeof v.prepRawMedia === "function") MP = v;
+      };
+
+      // Buscar en __webpack_module_cache__ (webpack 5)
+      const cache = W.__webpack_module_cache__;
+      if (cache) {
+        for (const mod of Object.values(cache)) {
+          const exp = mod?.exports;
+          if (!exp || typeof exp !== "object") continue;
+          testObj(exp);
+          testObj(exp.default);
+          testObj(exp.OpaqueData);
+          testObj(exp.MediaPrep);
+          for (const v of Object.values(exp)) {
+            if (!OD || !MP) testObj(v);
+          }
+          if (OD && MP) break;
+        }
+      }
+
+      // Fallback: buscar en __webpack_require__ (webpack 4) o en w.modules
+      if (!OD || !MP) {
+        const req = W.__webpack_require__;
+        const c = req?.c || req?.m;
+        if (c) {
+          for (const mod of Object.values(c)) {
+            const exp = mod?.exports ?? mod;
+            if (!exp || typeof exp !== "object") continue;
+            testObj(exp);
+            testObj(exp.default);
+            if (!OD || !MP) for (const v of Object.values(exp)) testObj(v);
+            if (OD && MP) break;
+          }
+        }
+      }
+
+      if (OD && MP) {
+        console.log("✅ Media modules found, patching _prepareMedia");
+        W.WWebJS._prepareMedia = async function (opts) {
+          if (!opts?.data) throw new Error("Media data required");
+          const file = W.WWebJS._base64ToFile(opts.data, opts.mimetype, opts.filename);
+          const opaque = await OD.createFromData(file, file.type);
+          const prep = MP.prepRawMedia(opaque, {
+            asDocument: opts.type === "document",
+            isPtt: !!opts.isPtt,
+          });
+          const mediaData = await prep.waitForPrep();
+          return mediaData?.toJSON ? mediaData.toJSON() : mediaData;
+        };
+      } else {
+        console.warn("❌ Media modules not found. OD:", !!OD, "MP:", !!MP,
+          "| cache keys sample:", Object.keys(W.__webpack_module_cache__ || {}).slice(0, 5));
+      }
+    });
+
+    if (isImage) {
+      return await _client.sendImage(contactId, tmpPath, caption || "", filename);
+    }
+    return await _client.sendFile(contactId, tmpPath, filename, caption || "");
+  } catch (err) {
+    console.error(`📤  Error enviando archivo a ${contactId}:`, err?.message || err);
+    throw err;
+  } finally {
+    try { fs.unlinkSync(tmpPath); } catch {}
+  }
+}
+
+module.exports = { start, restart, getStatus, getClient, sendText, sendFileBase64 };

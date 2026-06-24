@@ -38,10 +38,10 @@ export const api = {
   createContact: (data) => request("POST", "/contacts", data),
   updateContact: (contactId, data) => request("PATCH", `/contacts/${encodeURIComponent(contactId)}`, data),
   deleteContact: (contactId) => request("DELETE", `/contacts/${encodeURIComponent(contactId)}`),
-  toggleAutoAssist: (contactId, enabled) =>
-    request("PATCH", `/contacts/${encodeURIComponent(contactId)}/auto-assist`, { enabled }),
-
   // Conversaciones (Fase 5)
+  getContactsWithMessages: () => request("GET", "/contacts/messages-summary"),
   getMessages: (contactId) => request("GET", `/contacts/${encodeURIComponent(contactId)}/messages`),
   reply: (contactId, text) => request("POST", `/contacts/${encodeURIComponent(contactId)}/reply`, { text }),
+  replyFile: (contactId, base64, filename, mimetype, caption) =>
+    request("POST", `/contacts/${encodeURIComponent(contactId)}/reply-file`, { base64, filename, mimetype, caption }),
 };

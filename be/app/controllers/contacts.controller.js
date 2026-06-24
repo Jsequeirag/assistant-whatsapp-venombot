@@ -28,16 +28,13 @@ async function remove(req, res) {
   res.json({ ok: true });
 }
 
-async function toggleAutoAssist(req, res) {
-  const { id } = req.params;
-  const { enabled } = req.body;
-  const decoded = decodeURIComponent(id);
-  const contact = await contactService.setAutoAssist(decoded, enabled === true);
-  if (!contact) return res.status(404).json({ error: "Contacto no encontrado" });
-  res.json(contact);
-}
-
 // ─── Fase 5: vista conversacional ──────────────────────────────────────────────
+
+/** Todos los contactos que tienen al menos un mensaje entrante, con su último mensaje. */
+async function getMessagesSummary(req, res) {
+  const summary = await messageService.getContactsSummary();
+  res.json(summary);
+}
 
 async function getMessages(req, res) {
   const contactId = decodeURIComponent(req.params.id);
@@ -69,4 +66,30 @@ async function reply(req, res) {
   res.status(201).json(message);
 }
 
-module.exports = { list, create, update, remove, toggleAutoAssist, getMessages, reply };
+async function replyFile(req, res) {
+  const contactId = decodeURIComponent(req.params.id);
+  const { base64, filename, mimetype, caption } = req.body || {};
+  if (!base64 || !filename) return res.status(400).json({ error: "base64 y filename requeridos" });
+
+  const contact = await contactService.getById(contactId);
+  try {
+    await whatsappService.sendFileBase64(contactId, { base64, filename, mimetype, caption });
+  } catch (err) {
+    console.error(`📤  replyFile error [${contactId}]:`, err?.message || err);
+    return res.status(503).json({ error: err?.message || "No se pudo enviar el archivo" });
+  }
+
+  // Guardar en el historial: caption si la hay, o el nombre del archivo como indicador
+  const content = caption?.trim() || `[${filename}]`;
+  const message = await messageService.save({
+    contactId,
+    contactName: contact?.name || "",
+    role: "assistant",
+    content,
+    via: "manual",
+  });
+  contactService.addToHistory(contactId, "model", content);
+  res.status(201).json(message);
+}
+
+module.exports = { list, create, update, remove, getMessagesSummary, getMessages, reply, replyFile };

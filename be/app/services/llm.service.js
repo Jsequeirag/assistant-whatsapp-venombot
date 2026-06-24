@@ -1,20 +1,23 @@
-const { Groq } = require("groq-sdk");
+const { Groq, toFile } = require("groq-sdk");
 const { GROQ_API_KEY, GROQ_MODEL } = require("../config");
 
-// La key/modelo se gestionan desde el FE y se guardan en Mongo. Acá se cachean
-// en memoria; `configure()` los actualiza (al arrancar y cuando el FE los cambia).
+// La key/modelo/baseUrl se gestionan desde el FE y se guardan en Mongo. Se cachean
+// en memoria; `configure()` los actualiza al arrancar y cuando el FE los cambia.
 // Se siembran desde .env como valor inicial.
 let _apiKey = GROQ_API_KEY || "";
 let _model = GROQ_MODEL || "qwen/qwen3-32b";
+let _baseUrl = "";                            // vacío = Groq por defecto
+let _voiceModel = "whisper-large-v3-turbo";   // modelo de transcripción de voz
 let _client = null;
 
-/** Actualiza key/modelo en caliente. Recrea el cliente si cambió la key. */
-function configure({ apiKey, model } = {}) {
-  if (apiKey !== undefined && apiKey !== _apiKey) {
-    _apiKey = apiKey || "";
-    _client = null; // forzar recreación
-  }
+/** Actualiza key/modelo/baseUrl en caliente. Recrea el cliente si cambia la key o la URL. */
+function configure({ apiKey, model, baseUrl, voiceModel } = {}) {
+  const keyChanged = apiKey !== undefined && apiKey !== _apiKey;
+  const urlChanged = baseUrl !== undefined && baseUrl !== _baseUrl;
+  if (keyChanged) { _apiKey = apiKey || ""; _client = null; }
+  if (urlChanged) { _baseUrl = baseUrl || ""; _client = null; }
   if (model) _model = model;
+  if (voiceModel) _voiceModel = voiceModel;
 }
 
 function hasKey() {
@@ -26,9 +29,18 @@ function getModel() {
 }
 
 function getClient() {
-  if (!_apiKey) throw new Error("Groq API key no configurada");
-  if (!_client) _client = new Groq({ apiKey: _apiKey, timeout: 20000, maxRetries: 2 });
+  if (!_apiKey) throw new Error("API key no configurada");
+  if (!_client) {
+    const opts = { apiKey: _apiKey, timeout: 30000, maxRetries: 2 };
+    if (_baseUrl) opts.baseURL = _baseUrl;
+    _client = new Groq(opts);
+  }
   return _client;
+}
+
+/** True si el proveedor activo es Groq (o no hay URL personalizada). */
+function isGroqProvider() {
+  return !_baseUrl || _baseUrl.includes("groq.com");
 }
 
 // Modelos que NO son de chat (audio, TTS, moderación) → se excluyen del dropdown.
@@ -85,15 +97,19 @@ function toGroqMessages(history) {
  * @returns {Promise<string>} texto sin bloques <think>
  */
 async function chat(messages, { temperature = 0.6, maxTokens = 1024 } = {}) {
-  const completion = await getClient().chat.completions.create({
+  const params = {
     messages,
     model: _model,
     temperature,
     max_completion_tokens: maxTokens,
     top_p: 0.95,
     stream: false,
-    reasoning_effort: "none",
-  });
+  };
+  // reasoning_effort es específico de Groq; no se envía a otros proveedores
+  // para evitar errores con la API de OpenRouter u OpenAI.
+  if (isGroqProvider()) params.reasoning_effort = "none";
+
+  const completion = await getClient().chat.completions.create(params);
   return stripThink(completion.choices?.[0]?.message?.content || "");
 }
 
@@ -211,6 +227,23 @@ Responde ÚNICAMENTE con JSON válido, sin markdown:
   }
 }
 
+/**
+ * Transcribe un buffer de audio (voz de WhatsApp) usando Whisper en Groq.
+ * El modelo es fijo (whisper-large-v3-turbo); el LLM de chat (_model) no aplica aquí.
+ * @param {Buffer} audioBuffer
+ * @param {{ mimeType?: string, filename?: string }} [opts]
+ * @returns {Promise<string|null>} texto transcripto, o null si falla/vacío
+ */
+async function transcribeAudio(audioBuffer, { mimeType = "audio/ogg", filename = "audio.ogg" } = {}) {
+  const file = await toFile(audioBuffer, filename, { type: mimeType });
+  const result = await getClient().audio.transcriptions.create({
+    file,
+    model: _voiceModel,
+    response_format: "verbose_json",
+  });
+  return result.text?.trim() || null;
+}
+
 module.exports = {
   configure,
   hasKey,
@@ -220,4 +253,5 @@ module.exports = {
   classifyRecado,
   detectRecadoCompleted,
   classifyContent,
+  transcribeAudio,
 };

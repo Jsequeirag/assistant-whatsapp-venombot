@@ -1,3 +1,105 @@
+@import url('https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400&family=Space+Grotesk:wght@300;400;500&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* ── Reset global ─────────────────────────────────────────────────────────── */
+* {
+  border-radius: 0 !important;
+  box-sizing: border-box;
+}
+
+/* ── Base dark surface ───────────────────────────────────────────────────── */
+html, body, #root {
+  background-color: #0a0a0a;
+  color: #e8e8e8;
+  font-family: 'Space Grotesk', system-ui, sans-serif;
+  font-size: 13px;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── Terminal input wrapper ──────────────────────────────────────────────── */
+/* Wrap <input> or <select> in a div.t-input for terminal prefix */
+.t-input {
+  display: flex;
+  align-items: center;
+  background: #0f0f0f;
+  border: 1.5px solid #2a2a2a;
+  padding: 0 12px;
+  gap: 8px;
+}
+.t-input::before {
+  content: '>';
+  font-family: 'Space Mono', monospace;
+  color: #555;
+  font-size: 11px;
+  flex-shrink: 0;
+  line-height: 1;
+  user-select: none;
+}
+.t-input:focus-within {
+  border-color: #333;
+}
+.t-input:focus-within::before {
+  color: #aaa;
+}
+.t-input input,
+.t-input select,
+.t-input textarea {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: #e8e8e8;
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 13px;
+  padding: 8px 0;
+  min-width: 0;
+}
+.t-input input::placeholder,
+.t-input textarea::placeholder {
+  color: #555;
+}
+.t-input input[type="password"] {
+  letter-spacing: 0.1em;
+}
+.t-input select {
+  cursor: pointer;
+  appearance: none;
+}
+.t-input select option {
+  background: #0f0f0f;
+  color: #e8e8e8;
+}
+/* Remove browser arrows on number input */
+.t-input input[type="number"]::-webkit-inner-spin-button,
+.t-input input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+}
+.t-input input[type="number"] {
+  -moz-appearance: textfield;
+}
+
+/* ── Scrollbar mínimo ────────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: #0a0a0a; }
+::-webkit-scrollbar-thumb { background: #2a2a2a; }
+::-webkit-scrollbar-thumb:hover { background: #333; }
+
+/* ── Animaciones ─────────────────────────────────────────────────────────── */
+@keyframes pulse-opacity {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.25; }
+}
+@keyframes typing-dot {
+  0%, 80%, 100% { opacity: 0.15; }
+  40% { opacity: 1; }
+}
+
+.animate-online {
+  animation: pulse-opacity 2s ease-in-out infinite;
+}
+.typing-dot:nth-child(1) { animation: typing-dot 1.2s infinite 0s; }
+.typing-dot:nth-child(2) { animation: typing-dot 1.2s infinite 0.2s; }
+.typing-dot:nth-child(3) { animation: typing-dot 1.2s infinite 0.4s; }

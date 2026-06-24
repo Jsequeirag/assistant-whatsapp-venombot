@@ -32,10 +32,13 @@ router.post("/whatsapp/restart", whatsapp.restart);
 // ─── Contactos ────────────────────────────────────────────────────────────────
 router.get("/contacts", contacts.list);
 router.post("/contacts", contacts.create);
+// Ruta fija antes de /:id para que no sea capturada como parámetro
+router.get("/contacts/messages-summary", contacts.getMessagesSummary);
 router.patch("/contacts/:id", contacts.update);
-router.patch("/contacts/:id/auto-assist", contacts.toggleAutoAssist);
+
 router.delete("/contacts/:id", contacts.remove);
 router.get("/contacts/:id/messages", contacts.getMessages);
 router.post("/contacts/:id/reply", contacts.reply);
+router.post("/contacts/:id/reply-file", contacts.replyFile);
 
 module.exports = router;

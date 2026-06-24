@@ -1,25 +1,26 @@
 import { useState, useEffect } from "react";
 import { api } from "../api/client";
+import { Pencil, Trash2 } from "lucide-react";
 
-function Toggle({ checked, onChange }) {
-  return (
-    <button
-      onClick={() => onChange(!checked)}
-      className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus:outline-none ${
-        checked ? "bg-green-500" : "bg-gray-200"
-      }`}
+function Avatar({ url, name, size = 34 }) {
+  const initial = (name || "?").charAt(0).toUpperCase();
+  return url ? (
+    <img
+      src={url}
+      alt=""
+      loading="lazy"
+      style={{ width: size, height: size, background: "#131313", flexShrink: 0 }}
+    />
+  ) : (
+    <div
+      className="flex items-center justify-center font-mono text-[11px] text-[#555] bg-[#131313]"
+      style={{ width: size, height: size, flexShrink: 0 }}
     >
-      <span
-        className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
-          checked ? "translate-x-6" : "translate-x-1"
-        }`}
-      />
-    </button>
+      {initial}
+    </div>
   );
 }
 
-const inputCls =
-  "border border-gray-200 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-300";
 
 export default function Contacts() {
   const [contacts, setContacts] = useState([]);
@@ -74,109 +75,128 @@ export default function Contacts() {
     setEditingId(null);
   };
 
-  const toggleAssist = async (c) => {
-    const next = !c.autoAssist;
-    setContacts((prev) => prev.map((x) => x.contactId === c.contactId ? { ...x, autoAssist: next } : x));
-    try {
-      await api.toggleAutoAssist(c.contactId, next);
-    } catch {
-      setContacts((prev) => prev.map((x) => x.contactId === c.contactId ? { ...x, autoAssist: c.autoAssist } : x));
-    }
-  };
-
   return (
     <div>
-      <div className="flex items-center justify-between mb-4">
-        <h1 className="text-lg font-semibold text-gray-900">Contactos</h1>
+      <div className="flex items-center justify-between mb-5">
+        <h1 className="font-mono text-[11px] uppercase tracking-widest text-[#e8e8e8]">Contactos</h1>
         <button
           onClick={() => { setShowForm((v) => !v); setFormError(""); }}
-          className="text-sm bg-gray-900 text-white px-3 py-1.5 rounded-md hover:bg-gray-700 transition-colors"
+          className="font-mono text-[10px] uppercase tracking-wider px-3 py-1.5 bg-[#e8e8e8] text-[#0c0c0c] hover:bg-[#d0d0d0] transition-colors"
         >
           {showForm ? "Cancelar" : "+ Nuevo"}
         </button>
       </div>
 
       {showForm && (
-        <form onSubmit={handleCreate} className="bg-white border border-gray-200 rounded-lg p-4 mb-4 space-y-3">
+        <form onSubmit={handleCreate} className="border border-[#2a2a2a] bg-[#0f0f0f] p-4 mb-3 space-y-3">
           <div className="flex gap-2">
-            <input
-              type="text"
-              placeholder="Nombre"
-              value={form.name}
-              onChange={(e) => setForm({ ...form, name: e.target.value })}
-              className={`${inputCls} flex-1`}
-            />
-            <input
-              type="tel"
-              placeholder="Número (ej: 50688887777)"
-              value={form.number}
-              onChange={(e) => setForm({ ...form, number: e.target.value })}
-              className={`${inputCls} flex-1`}
-            />
+            <div className="t-input flex-1">
+              <input
+                type="text"
+                placeholder="Nombre"
+                value={form.name}
+                onChange={(e) => setForm({ ...form, name: e.target.value })}
+              />
+            </div>
+            <div className="t-input flex-1">
+              <input
+                type="tel"
+                placeholder="Número (ej: 50688887777)"
+                value={form.number}
+                onChange={(e) => setForm({ ...form, number: e.target.value })}
+              />
+            </div>
           </div>
-          {formError && <p className="text-xs text-red-500">{formError}</p>}
-          <p className="text-xs text-gray-400">Ingresá el número completo con código de país, sin + ni espacios.</p>
-          <button type="submit" className="text-sm bg-gray-900 text-white px-4 py-2 rounded-md hover:bg-gray-700 transition-colors">
+          {formError && (
+            <p className="font-mono text-[9px] uppercase tracking-wider text-[#555]">{formError}</p>
+          )}
+          <p className="font-mono text-[9px] text-[#555] leading-relaxed">
+            Número completo con código de país, sin + ni espacios.
+          </p>
+          <button
+            type="submit"
+            className="font-mono text-[10px] uppercase tracking-wider px-4 py-2 bg-[#e8e8e8] text-[#0c0c0c] hover:bg-[#d0d0d0] transition-colors"
+          >
             Guardar
           </button>
         </form>
       )}
 
-      {loading && <p className="text-center text-gray-400 py-12">Cargando...</p>}
-      {error && <p className="text-center text-red-400 py-12">{error}</p>}
+      {loading && (
+        <p className="font-mono text-center text-[#555] py-12 text-[11px] uppercase tracking-wider">
+          Cargando...
+        </p>
+      )}
+      {error && (
+        <p className="font-mono text-center text-[#555] py-12 text-[11px] uppercase tracking-wider">
+          {error}
+        </p>
+      )}
 
       {!loading && !error && contacts.length === 0 && (
         <div className="text-center py-12">
-          <p className="text-gray-400">No hay contactos registrados aún.</p>
-          <p className="text-xs text-gray-300 mt-1">Creá uno manualmente o aparecerán cuando alguien te escriba.</p>
+          <p className="font-mono text-[#555] text-[11px] uppercase tracking-wider">
+            No hay contactos registrados.
+          </p>
+          <p className="font-mono text-[9px] text-[#333] mt-2">
+            Creá uno manualmente o aparecerán cuando alguien te escriba.
+          </p>
         </div>
       )}
 
       {!loading && !error && contacts.length > 0 && (
-        <ul className="space-y-2">
+        <ul className="border border-[#1a1a1a] divide-y divide-[#1a1a1a]">
           {contacts.map((c) => (
-            <li key={c.contactId} className="bg-white rounded-lg border border-gray-200 px-4 py-3">
-              <div className="flex items-center justify-between gap-3">
+            <li key={c.contactId} className="bg-[#0f0f0f] px-4 py-3 hover:bg-[#131313] transition-colors">
+              <div className="flex items-center gap-3">
+                <Avatar url={c.avatarUrl} name={c.name || c.number} />
                 <div className="min-w-0 flex-1">
                   {editingId === c.contactId ? (
                     <div className="flex items-center gap-2">
-                      <input
-                        autoFocus
-                        type="text"
-                        value={editName}
-                        onChange={(e) => setEditName(e.target.value)}
-                        onKeyDown={(e) => e.key === "Enter" && handleEditSave(c)}
-                        className={`${inputCls} flex-1`}
-                      />
-                      <button onClick={() => handleEditSave(c)} className="text-xs text-blue-600 hover:underline">Guardar</button>
-                      <button onClick={() => setEditingId(null)} className="text-xs text-gray-400 hover:underline">Cancelar</button>
+                      <div className="t-input flex-1">
+                        <input
+                          autoFocus
+                          type="text"
+                          value={editName}
+                          onChange={(e) => setEditName(e.target.value)}
+                          onKeyDown={(e) => e.key === "Enter" && handleEditSave(c)}
+                        />
+                      </div>
+                      <button
+                        onClick={() => handleEditSave(c)}
+                        className="font-mono text-[9px] uppercase tracking-wider text-[#e8e8e8] hover:text-[#aaa]"
+                      >
+                        Guardar
+                      </button>
+                      <button
+                        onClick={() => setEditingId(null)}
+                        className="font-mono text-[9px] uppercase tracking-wider text-[#555] hover:text-[#aaa]"
+                      >
+                        Cancelar
+                      </button>
                     </div>
                   ) : (
                     <div className="flex items-center gap-2">
-                      <p className="text-sm font-medium text-gray-900 truncate">{c.name || c.number}</p>
+                      <p className="font-mono text-[12px] text-[#e8e8e8] truncate">{c.name || c.number}</p>
                       <button
                         onClick={() => { setEditingId(c.contactId); setEditName(c.name || ""); }}
-                        className="text-xs text-gray-400 hover:text-gray-600"
+                        className="p-1.5 text-[#333] hover:text-[#aaa] hover:bg-[#1a1a1a] transition-colors"
                         title="Editar nombre"
                       >
-                        ✏️
+                        <Pencil size={13} />
                       </button>
                     </div>
                   )}
-                  <p className="text-xs text-gray-400">{c.number}</p>
+                  <p className="font-mono text-[9px] text-[#555] mt-0.5">{c.number}</p>
                 </div>
 
-                <div className="flex items-center gap-3 shrink-0">
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-xs text-gray-400">Auto-asistir</span>
-                    <Toggle checked={c.autoAssist} onChange={() => toggleAssist(c)} />
-                  </div>
+                <div className="flex items-center gap-1 shrink-0">
                   <button
                     onClick={() => handleDelete(c)}
-                    className="text-xs text-red-400 hover:text-red-600 px-2 py-1 rounded hover:bg-red-50 transition-colors"
+                    className="group p-2 text-[#555] hover:text-red-500 hover:bg-red-500/10 border border-transparent hover:border-red-500/30 transition-all duration-200"
                     title="Eliminar contacto"
                   >
-                    🗑️
+                    <Trash2 size={15} className="group-hover:scale-110 transition-transform duration-200" />
                   </button>
                 </div>
               </div>

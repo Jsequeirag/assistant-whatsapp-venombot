@@ -34,13 +34,15 @@ async function updateIdentity(req, res) {
 }
 
 async function updateGroq(req, res) {
-  const { apiKey, model } = req.body;
+  const { apiKey, model, baseUrl, voiceModel } = req.body;
   // apiKey solo se actualiza si viene un valor nuevo (el FE no envía la máscara).
   await modeService.updateGroq({
     ...(apiKey ? { apiKey } : {}),
     ...(model ? { model } : {}),
+    ...(baseUrl !== undefined ? { baseUrl } : {}),
+    ...(voiceModel ? { voiceModel } : {}),
   });
-  // Aplicar en caliente al cliente de Groq.
+  // Aplicar en caliente al cliente LLM.
   const cfg = await modeService.getGroqConfig();
   llmService.configure(cfg);
   const settings = await modeService.getSettings();

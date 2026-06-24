@@ -11,6 +11,17 @@ const messageSchema = new Schema(
     content: { type: String, required: true },
     // Para mensajes "assistant": "auto" = generado por la IA, "manual" = enviado desde el panel.
     via: { type: String, enum: ["auto", "manual"], default: "auto" },
+    // true cuando el contenido proviene de una transcripción de audio (Whisper)
+    isTranscribed: { type: Boolean, default: false },
+    // Base64 del medio visual (imagen, sticker, gif) descargado y descifrado
+    mediaData: { type: String },
+    mediaType: { type: String }, // mimetype limpio, ej: "image/jpeg", "image/webp", "video/mp4"
+    // Clasificación IA del mensaje entrante (solo role="user"). Ausente si no fue clasificado.
+    aiClassification: {
+      isRecado: { type: Boolean },
+      summary: { type: String },
+      priority: { type: String, enum: ["alta", "media", "baja"] },
+    },
   },
   { timestamps: true }
 );

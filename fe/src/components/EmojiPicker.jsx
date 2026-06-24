@@ -1,14 +1,12 @@
 import { useState, useRef, useEffect } from "react";
 
-// Paleta curada de emojis comunes para motivos/contextos de ausencia.
-// Sin dependencias externas (evita problemas de instalación por TLS del entorno).
 const CATS = {
   Caras: ["😀", "🙂", "😅", "😊", "😇", "🤔", "😴", "😪", "🥱", "😎", "🤒", "🤕", "🥳", "😌"],
   Estados: ["🔕", "😶", "💤", "✈️", "🏖️", "🍽️", "☕", "🏥", "💼", "📵", "⏰", "📅", "🚗", "🏃"],
   Símbolos: ["✅", "❌", "⚠️", "📌", "📝", "💬", "👍", "🙏", "❤️", "🎉", "⭐", "🔥", "💪", "🤝"],
 };
 
-export default function EmojiPicker({ onPick }) {
+export default function EmojiPicker({ onPick, placement = "bottom" }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
 
@@ -25,22 +23,26 @@ export default function EmojiPicker({ onPick }) {
         type="button"
         onClick={() => setOpen((v) => !v)}
         title="Insertar emoji"
-        className="shrink-0 h-9 w-9 flex items-center justify-center rounded-md border border-gray-200 text-lg hover:bg-gray-50 transition-colors"
+        className="shrink-0 h-9 w-9 flex items-center justify-center border border-[#2a2a2a] bg-[#0f0f0f] text-lg hover:border-[#333] transition-colors"
       >
         😊
       </button>
       {open && (
-        <div className="absolute right-0 z-20 mt-1 w-64 max-h-64 overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg p-2">
+        <div
+          className={`absolute right-0 z-50 w-64 max-h-64 overflow-y-auto border border-[#2a2a2a] bg-[#0f0f0f] p-2 ${
+            placement === "top" ? "bottom-full mb-1" : "top-full mt-1"
+          }`}
+        >
           {Object.entries(CATS).map(([cat, emojis]) => (
             <div key={cat} className="mb-2 last:mb-0">
-              <p className="text-[10px] uppercase tracking-wide text-gray-400 px-1 mb-1">{cat}</p>
+              <p className="font-mono text-[9px] uppercase tracking-widest text-[#555] px-1 mb-1">{cat}</p>
               <div className="grid grid-cols-7 gap-0.5">
                 {emojis.map((e) => (
                   <button
                     key={e}
                     type="button"
                     onClick={() => { onPick(e); setOpen(false); }}
-                    className="h-8 w-8 flex items-center justify-center rounded text-lg hover:bg-gray-100 transition-colors"
+                    className="h-8 w-8 flex items-center justify-center text-lg hover:bg-[#1a1a1a] transition-colors"
                   >
                     {e}
                   </button>

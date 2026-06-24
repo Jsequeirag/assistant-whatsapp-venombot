@@ -6,26 +6,31 @@ function Toggle({ checked, onChange, label }) {
   return (
     <label className="flex items-center gap-3 cursor-pointer">
       <button
+        type="button"
         onClick={() => onChange(!checked)}
-        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${
-          checked ? "bg-green-500" : "bg-gray-200"
-        }`}
+        className="relative inline-flex h-5 w-10 items-center border transition-colors focus:outline-none"
+        style={{
+          background: checked ? "#e8e8e8" : "transparent",
+          borderColor: checked ? "#e8e8e8" : "#333",
+        }}
       >
         <span
-          className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
-            checked ? "translate-x-6" : "translate-x-1"
-          }`}
+          className="inline-block h-3.5 w-3.5 transition-transform"
+          style={{
+            background: checked ? "#0c0c0c" : "#555",
+            transform: checked ? "translateX(20px)" : "translateX(4px)",
+          }}
         />
       </button>
-      <span className="text-sm text-gray-700">{label}</span>
+      <span className="font-mono text-[11px] uppercase tracking-wider text-[#aaa]">{label}</span>
     </label>
   );
 }
 
 function Card({ title, children }) {
   return (
-    <div className="bg-white rounded-lg border border-gray-200 p-5 space-y-4">
-      <h2 className="font-medium text-gray-900">{title}</h2>
+    <div className="border border-[#2a2a2a] bg-[#0f0f0f] p-5 space-y-4">
+      <h2 className="font-mono text-[11px] uppercase tracking-widest text-[#aaa]">{title}</h2>
       {children}
     </div>
   );
@@ -34,21 +39,19 @@ function Card({ title, children }) {
 function Field({ label, hint, children }) {
   return (
     <div>
-      <label className="block text-xs text-gray-500 mb-1">{label}</label>
+      <label className="block font-mono text-[9px] uppercase tracking-widest text-[#555] mb-1.5">{label}</label>
       {children}
-      {hint && <p className="text-xs text-gray-400 mt-1">{hint}</p>}
+      {hint && <p className="font-mono text-[9px] text-[#555] mt-1.5 leading-relaxed">{hint}</p>}
     </div>
   );
 }
 
-const inputCls =
-  "w-full border border-gray-200 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-300";
-
 function SaveButton({ onClick, saved }) {
   return (
     <button
+      type="button"
       onClick={onClick}
-      className="text-sm bg-gray-900 text-white px-4 py-2 rounded-md hover:bg-gray-700 transition-colors"
+      className="font-mono text-[10px] uppercase tracking-wider px-4 py-2 bg-[#e8e8e8] text-[#0c0c0c] hover:bg-[#d0d0d0] transition-colors"
     >
       {saved ? "✓ Guardado" : "Guardar"}
     </button>
@@ -86,40 +89,48 @@ export default function Settings() {
   const saveAutoAssist = async () => { await api.updateAutoAssist(autoAssist); notify("autoAssist"); };
   const saveRetention = async () => { const r = await api.updateRetention(retention.days); setRetention(r); notify("retention"); };
 
-  if (loading) return <p className="text-center text-gray-400 py-12">Cargando...</p>;
+  if (loading) return (
+    <p className="font-mono text-center text-[#555] py-12 text-[11px] uppercase tracking-wider">
+      Cargando...
+    </p>
+  );
 
   const preview = `"Hola, soy ${identity.assistantName || "Ari"}, el asistente virtual de ${identity.ownerName || "el usuario"}."`;
 
   return (
-    <div className="space-y-4">
-      <h1 className="text-lg font-semibold text-gray-900">Configuración</h1>
+    <div className="space-y-3">
+      <h1 className="font-mono text-[11px] uppercase tracking-widest text-[#e8e8e8] mb-5">
+        Configuración
+      </h1>
 
       {/* Identidad */}
-      <Card title="👤 Identidad del asistente">
+      <Card title="Identidad del asistente">
         <Field label="Tu nombre">
-          <input
-            type="text"
-            value={identity.ownerName}
-            onChange={(e) => setIdentity({ ...identity, ownerName: e.target.value })}
-            placeholder="ej: Jose"
-            className={inputCls}
-          />
+          <div className="t-input">
+            <input
+              type="text"
+              value={identity.ownerName}
+              onChange={(e) => setIdentity({ ...identity, ownerName: e.target.value })}
+              placeholder="ej: Jose"
+            />
+          </div>
         </Field>
         <Field label="Nombre del asistente">
-          <input
-            type="text"
-            value={identity.assistantName}
-            onChange={(e) => setIdentity({ ...identity, assistantName: e.target.value })}
-            placeholder="ej: Ari"
-            className={inputCls}
-          />
+          <div className="t-input">
+            <input
+              type="text"
+              value={identity.assistantName}
+              onChange={(e) => setIdentity({ ...identity, assistantName: e.target.value })}
+              placeholder="ej: Ari"
+            />
+          </div>
         </Field>
-        <p className="text-xs text-gray-400 italic">{preview}</p>
+        <p className="font-mono text-[10px] text-[#555] italic">{preview}</p>
         <SaveButton onClick={saveIdentity} saved={saved === "identity"} />
       </Card>
 
       {/* DND */}
-      <Card title="🔕 No molestar (DND)">
+      <Card title="No molestar (DND)">
         <Toggle
           checked={dnd.active}
           onChange={(v) => setDnd({ ...dnd, active: v })}
@@ -130,13 +141,14 @@ export default function Settings() {
           hint="La IA adapta el mensaje según esto. Ej: 'en una reunión', 'almorzando', 'de viaje hasta el viernes'."
         >
           <div className="flex items-start gap-2">
-            <input
-              type="text"
-              value={dnd.reason}
-              onChange={(e) => setDnd({ ...dnd, reason: e.target.value })}
-              placeholder="ej: en una reunión"
-              className={inputCls}
-            />
+            <div className="t-input flex-1">
+              <input
+                type="text"
+                value={dnd.reason}
+                onChange={(e) => setDnd({ ...dnd, reason: e.target.value })}
+                placeholder="ej: en una reunión"
+              />
+            </div>
             <EmojiPicker onPick={(emo) => setDnd((d) => ({ ...d, reason: `${d.reason}${emo}` }))} />
           </div>
         </Field>
@@ -144,7 +156,7 @@ export default function Settings() {
       </Card>
 
       {/* Sleep */}
-      <Card title="😴 Modo dormir (20:00–08:00)">
+      <Card title="Modo dormir (20:00–08:00)">
         <Toggle
           checked={sleep.active}
           onChange={(v) => setSleep({ ...sleep, active: v })}
@@ -152,16 +164,17 @@ export default function Settings() {
         />
         <Field
           label="Motivo / contexto"
-          hint="La IA adapta el mensaje según esto. Si está vacío, usará 'descansando'. Ej: 'durmiendo', 'es tarde y ya no atiendo hasta mañana'."
+          hint="La IA adapta el mensaje según esto. Si está vacío, usará 'descansando'."
         >
           <div className="flex items-start gap-2">
-            <input
-              type="text"
-              value={sleep.reason}
-              onChange={(e) => setSleep({ ...sleep, reason: e.target.value })}
-              placeholder="ej: descansando"
-              className={inputCls}
-            />
+            <div className="t-input flex-1">
+              <input
+                type="text"
+                value={sleep.reason}
+                onChange={(e) => setSleep({ ...sleep, reason: e.target.value })}
+                placeholder="ej: descansando"
+              />
+            </div>
             <EmojiPicker onPick={(emo) => setSleep((s) => ({ ...s, reason: `${s.reason || ""}${emo}` }))} />
           </div>
         </Field>
@@ -169,48 +182,50 @@ export default function Settings() {
       </Card>
 
       {/* Auto-asistir */}
-      <Card title="🤖 Auto-asistir">
+      <Card title="Auto-asistir">
         <Toggle
           checked={autoAssist.globalEnabled}
           onChange={(v) => setAutoAssist({ ...autoAssist, globalEnabled: v })}
           label={autoAssist.globalEnabled ? "Global: activo" : "Global: inactivo"}
         />
-        <p className="text-xs text-gray-400">
-          Activá por contacto individualmente en la pestaña Contactos.
+        <p className="font-mono text-[9px] text-[#555] leading-relaxed">
+          Cuando está activo, el bot sigue la conversación con todos los contactos.
         </p>
         <SaveButton onClick={saveAutoAssist} saved={saved === "autoAssist"} />
       </Card>
 
-      {/* Retención de datos */}
-      <Card title="🧹 Retención de datos">
+      {/* Retención */}
+      <Card title="Retención de datos">
         <Field
-          label="Días que duran recados y conversaciones"
-          hint="Cuando un recado o mensaje supera estos días, se borra automáticamente para ahorrar espacio. 0 = no borrar nunca."
+          label="Días de retención"
+          hint="Recados y mensajes más antiguos se eliminan automáticamente. 0 = nunca borrar."
         >
-          <div className="flex items-center gap-2">
-            <input
-              type="number"
-              min="0"
-              value={retention.days}
-              onChange={(e) => setRetention({ days: e.target.value })}
-              className={`${inputCls} w-28`}
-            />
-            <span className="text-sm text-gray-500">días</span>
+          <div className="flex items-center gap-3">
+            <div className="t-input w-28">
+              <input
+                type="number"
+                min="0"
+                value={retention.days}
+                onChange={(e) => setRetention({ days: e.target.value })}
+              />
+            </div>
+            <span className="font-mono text-[11px] text-[#555] uppercase tracking-wider">días</span>
           </div>
         </Field>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap gap-1.5">
           {[1, 2, 7, 30, 90].map((d) => (
             <button
               key={d}
               type="button"
               onClick={() => setRetention({ days: d })}
-              className={`px-3 py-1 rounded-full text-xs transition-colors ${
-                Number(retention.days) === d
-                  ? "bg-gray-900 text-white"
-                  : "bg-white text-gray-500 border border-gray-200 hover:border-gray-400"
-              }`}
+              className="font-mono text-[9px] uppercase tracking-wider px-3 py-1 border transition-colors"
+              style={{
+                borderColor: Number(retention.days) === d ? "#e8e8e8" : "#2a2a2a",
+                color: Number(retention.days) === d ? "#e8e8e8" : "#555",
+                background: Number(retention.days) === d ? "#131313" : "transparent",
+              }}
             >
-              {d} {d === 1 ? "día" : "días"}
+              {d}d
             </button>
           ))}
         </div>

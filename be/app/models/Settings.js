@@ -21,6 +21,10 @@ const settingsSchema = new Schema({
   groq: {
     apiKey: { type: String, default: "" },
     model: { type: String, default: "qwen/qwen3-32b" },
+    // URL base del proveedor OpenAI-compatible. Vacío = usar Groq por defecto.
+    baseUrl: { type: String, default: "" },
+    // Modelo de transcripción de voz (Whisper o compatible).
+    voiceModel: { type: String, default: "whisper-large-v3-turbo" },
   },
   // Retención de datos: recados y mensajes más viejos que `days` se borran (ahorro de espacio).
   // 0 = nunca borrar (deshabilitado).

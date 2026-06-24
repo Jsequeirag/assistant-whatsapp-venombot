@@ -64,22 +64,31 @@ async function getSettings() {
       model: s.groq?.model || "",
       hasKey: !!s.groq?.apiKey,
       keyMasked: maskKey(s.groq?.apiKey),
+      baseUrl: s.groq?.baseUrl || "",
+      voiceModel: s.groq?.voiceModel || "whisper-large-v3-turbo",
     },
     retention: { days: s.retention?.days ?? 30 },
   };
 }
 
-/** Config cruda de Groq (apiKey real) — solo para uso interno (llm.service / arranque). */
+/** Config cruda del proveedor (apiKey real) — solo para uso interno (llm.service / arranque). */
 async function getGroqConfig() {
   const s = await getOrCreateSettings();
-  return { apiKey: s.groq?.apiKey || "", model: s.groq?.model || "" };
+  return {
+    apiKey: s.groq?.apiKey || "",
+    model: s.groq?.model || "",
+    baseUrl: s.groq?.baseUrl || "",
+    voiceModel: s.groq?.voiceModel || "whisper-large-v3-turbo",
+  };
 }
 
-async function updateGroq({ apiKey, model }) {
+async function updateGroq({ apiKey, model, baseUrl, voiceModel }) {
   await getOrCreateSettings();
   const update = {};
   if (apiKey !== undefined) update["groq.apiKey"] = apiKey;
   if (model !== undefined && model) update["groq.model"] = model;
+  if (baseUrl !== undefined) update["groq.baseUrl"] = baseUrl;
+  if (voiceModel !== undefined && voiceModel) update["groq.voiceModel"] = voiceModel;
   if (Object.keys(update).length) await Settings.updateOne({}, { $set: update });
 }
 
