@@ -6,4 +6,6 @@ module.exports = {
   GROQ_MODEL: process.env.GROQ_MODEL || "qwen/qwen3-32b",
   MONGODB_URI: process.env.MONGODB_URI || "mongodb://localhost:27017/aria",
   NODE_ENV: process.env.NODE_ENV || "development",
+  // Zona para Sleep 20:00–08:00. No usar TZ del VPS (suele ser UTC).
+  DEFAULT_TZ: process.env.ARIA_TZ || "America/Argentina/Buenos_Aires",
 };

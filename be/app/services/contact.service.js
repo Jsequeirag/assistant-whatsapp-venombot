@@ -1,4 +1,6 @@
 const Contact = require("../models/Contact");
+const Message = require("../models/Message");
+const Recado = require("../models/Recado");
 
 // Historial de conversación y estado de recado: in-memory (ephemeral por diseño)
 const sessionState = new Map();
@@ -9,24 +11,85 @@ function dicebearUrl(seed) {
   return `https://api.dicebear.com/10.x/bottts-neutral/svg?seed=${encodeURIComponent(s)}`;
 }
 
-async function getOrCreate(contactId, pushName) {
-  const number = contactId.replace(/@.+$/, "");
-  const nameForInsert = pushName || number;
-  const contact = await Contact.findOneAndUpdate(
-    { contactId },
-    { $setOnInsert: { contactId, number, name: nameForInsert, avatarUrl: dicebearUrl(nameForInsert) } },
-    { upsert: true, new: true }
-  );
-  // Actualizar nombre si llegó uno nuevo y el guardado está vacío
-  if (pushName && !contact.name) {
-    contact.name = pushName;
-    contact.avatarUrl = dicebearUrl(pushName);
-    await contact.save();
+function digitsOf(value) {
+  return String(value || "").replace(/@.+$/, "").replace(/\D/g, "");
+}
+
+function dropSession(contactId) {
+  sessionState.delete(contactId);
+}
+
+/**
+ * Si ya existía el mismo teléfono con otro id (@c.us vs @lid), unifica el
+ * documento y mueve mensajes/recados al contactId actual (el de WhatsApp).
+ */
+async function adoptSibling(contactId, number, pushName) {
+  if (!number) return null;
+  const sibling = await Contact.findOne({
+    number,
+    contactId: { $ne: contactId },
+  });
+  if (!sibling) return null;
+
+  const oldId = sibling.contactId;
+  await Promise.all([
+    Message.updateMany({ contactId: oldId }, { $set: { contactId } }),
+    Recado.updateMany({ contactId: oldId }, { $set: { contactId } }),
+  ]);
+
+  const name = pushName || sibling.name;
+  try {
+    sibling.contactId = contactId;
+    sibling.number = number;
+    if (name) {
+      sibling.name = name;
+      if (!sibling.avatarUrl || pushName) sibling.avatarUrl = dicebearUrl(name);
+    }
+    await sibling.save();
+    dropSession(oldId);
+    console.log(`🔗 Contacto unificado ${oldId} → ${contactId}`);
+    return sibling;
+  } catch (e) {
+    // Carrera: el contactId nuevo ya existe. Borrar el sibling viejo.
+    await Contact.deleteOne({ contactId: oldId });
+    dropSession(oldId);
+    console.warn(`🔗 Unificación: se descartó ${oldId} (${e?.message || e})`);
+    return Contact.findOne({ contactId });
   }
-  // Retrocompatibilidad: contactos existentes sin avatarUrl
+}
+
+async function getOrCreate(contactId, pushName, { phoneNumber } = {}) {
+  const number = digitsOf(phoneNumber) || digitsOf(contactId);
+  const nameForInsert = pushName || number;
+
+  let contact = await Contact.findOne({ contactId });
+  if (!contact) {
+    contact = await adoptSibling(contactId, number, pushName);
+  } else if (number) {
+    // @c.us y @lid del mismo teléfono: mover historial al id actual y borrar el duplicado.
+    await adoptSibling(contactId, number, pushName);
+    contact = (await Contact.findOne({ contactId })) || contact;
+  }
+  if (!contact) {
+    contact = await Contact.findOneAndUpdate(
+      { contactId },
+      { $setOnInsert: { contactId, number, name: nameForInsert, avatarUrl: dicebearUrl(nameForInsert) } },
+      { upsert: true, new: true }
+    );
+  }
+
+  const changes = {};
+  if (number && contact.number !== number) changes.number = number;
+  if (pushName && !contact.name) {
+    changes.name = pushName;
+    changes.avatarUrl = dicebearUrl(pushName);
+  }
   if (!contact.avatarUrl) {
-    contact.avatarUrl = dicebearUrl(contact.name || number);
-    await Contact.updateOne({ contactId }, { avatarUrl: contact.avatarUrl });
+    changes.avatarUrl = dicebearUrl(contact.name || number);
+  }
+  if (Object.keys(changes).length) {
+    Object.assign(contact, changes);
+    await Contact.updateOne({ contactId }, { $set: changes });
   }
   return contact;
 }
@@ -41,9 +104,19 @@ async function getById(contactId) {
 
 
 async function create(number, name) {
-  const clean = number.replace(/\D/g, "");
-  const contactId = `${clean}@c.us`;
+  const clean = digitsOf(number);
+  if (!clean) return null;
   const displayName = name || clean;
+  const existing = await Contact.findOne({ number: clean });
+  if (existing) {
+    if (name && name !== existing.name) {
+      existing.name = displayName;
+      existing.avatarUrl = dicebearUrl(displayName);
+      await existing.save();
+    }
+    return existing;
+  }
+  const contactId = `${clean}@c.us`;
   return Contact.findOneAndUpdate(
     { contactId },
     { $setOnInsert: { contactId, number: clean, name: displayName, avatarUrl: dicebearUrl(displayName) } },
@@ -61,7 +134,18 @@ async function update(contactId, { name }) {
 }
 
 async function remove(contactId) {
-  return Contact.findOneAndDelete({ contactId });
+  const contact = await Contact.findOne({ contactId });
+  if (!contact) return null;
+  const ids = contact.number
+    ? (await Contact.find({ $or: [{ contactId }, { number: contact.number }] }).select("contactId").lean()).map((c) => c.contactId)
+    : [contactId];
+  await Promise.all([
+    Contact.deleteMany({ contactId: { $in: ids } }),
+    Message.deleteMany({ contactId: { $in: ids } }),
+    Recado.deleteMany({ contactId: { $in: ids } }),
+  ]);
+  for (const id of ids) dropSession(id);
+  return contact;
 }
 
 // ─── Estado de sesión (in-memory) ────────────────────────────────────────────
@@ -123,4 +207,5 @@ module.exports = {
   addToHistory,
   markRecadoCompleted,
   isRecadoCompleted,
+  dropSession,
 };

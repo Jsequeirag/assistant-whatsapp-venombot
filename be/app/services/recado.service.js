@@ -1,7 +1,7 @@
 const Recado = require("../models/Recado");
 
-async function save({ contactId, contactName, content, originalContent, priority, timestamp }) {
-  return Recado.create({ contactId, contactName, content, originalContent, priority, timestamp });
+async function save({ contactId, contactName, content, originalContent, priority }) {
+  return Recado.create({ contactId, contactName, content, originalContent, priority });
 }
 
 async function getAll({ read } = {}) {

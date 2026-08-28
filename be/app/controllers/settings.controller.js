@@ -13,10 +13,13 @@ async function updateDnd(req, res) {
 }
 
 async function updateSleep(req, res) {
-  const { active, reason } = req.body;
-  await modeService.updateSleep({ active, reason });
+  const { active, reason, timezone } = req.body;
+  if (timezone !== undefined && !modeService.normalizeTimeZone(timezone)) {
+    return res.status(400).json({ error: "Zona horaria inválida" });
+  }
+  await modeService.updateSleep({ active, reason, timezone });
   const settings = await modeService.getSettings();
-  res.json(settings.sleep);
+  res.json({ ...settings.sleep, timezone: settings.timezone });
 }
 
 async function updateAutoAssist(req, res) {

@@ -1,15 +1,28 @@
 const QRCode = require("qrcode");
 const venom = require("../../dist");
-const { processMessage, setHostId, registerSelfId } = require("../controllers/webhook.controller");
+const {
+  processMessage,
+  setHostId,
+  registerSelfId,
+  enqueueByContact,
+} = require("../controllers/webhook.controller");
 const auditService = require("./audit.service");
+const Contact = require("../models/Contact");
 
 const SESSION = process.env.VENOM_SESSION || "aria";
 const BROWSER = process.env.VENOM_BROWSER || "chrome"; // chrome | edge | chromium
+
+const DEAD_STATES = new Set(["TIMEOUT", "UNPAIRED", "UNPAIRED_IDLE", "UNLAUNCHED"]);
+const RECONNECT_BASE_MS = 5000;
+const RECONNECT_MAX_MS = 60 * 1000;
 
 let _client = null;
 let _state = "disconnected"; // starting | qr | connected | disconnected
 let _qr = null; // data URL de la imagen del QR
 let _starting = false;
+let _intentionalClose = false;
+let _reconnectTimer = null;
+let _reconnectAttempt = 0;
 
 async function _onQR(qrString) {
   try {
@@ -21,41 +34,108 @@ async function _onQR(qrString) {
   console.log("📱 Nuevo QR disponible — escanealo desde el panel (pestaña Estado).");
 }
 
-function _attachHandlers() {
-  _client.onMessage((msg) => {
-    processMessage(_client, msg).catch((err) =>
-      console.error("Error procesando mensaje:", err.message)
-    );
+function _clearReconnect() {
+  if (_reconnectTimer) {
+    clearTimeout(_reconnectTimer);
+    _reconnectTimer = null;
+  }
+}
+
+function _scheduleReconnect(reason) {
+  if (_intentionalClose || _starting) return;
+  if (_reconnectTimer) return;
+  const delay = Math.min(RECONNECT_BASE_MS * 2 ** _reconnectAttempt, RECONNECT_MAX_MS);
+  _reconnectAttempt += 1;
+  console.warn(`↻ Reintento WhatsApp en ${Math.round(delay / 1000)}s (${reason})`);
+  _reconnectTimer = setTimeout(() => {
+    _reconnectTimer = null;
+    if (_intentionalClose || _starting || _state === "connected") return;
+    _state = "disconnected";
+    start().catch((e) => console.error("Error reconectando WhatsApp:", e.message));
+  }, delay);
+}
+
+function _markDisconnected(reason, { reconnect = true } = {}) {
+  _state = "disconnected";
+  _qr = null;
+  auditService.recordWhatsApp("error", reason, "runtime");
+  if (reconnect) _scheduleReconnect(reason);
+}
+
+async function _disposeClient() {
+  const c = _client;
+  _client = null;
+  if (!c) return;
+  try { await c.close(); } catch {}
+}
+
+function _attachHandlers(client) {
+  client.onMessage((msg) => {
+    enqueueByContact(msg.from || "", () => processMessage(client, msg));
   });
-  _client.onStateChange((state) => {
-    if (state === "CONFLICT" || state === "UNLAUNCHED") {
-      console.warn("⚠️  Estado WhatsApp:", state, "— intentando retomar...");
-      auditService.recordWhatsApp("error", `Estado: ${state}`, "runtime");
-      _client.useHere().catch(() => {});
+
+  client.onStateChange((state) => {
+    console.log("📡 WhatsApp state:", state);
+    if (state === "CONNECTED") {
+      _state = "connected";
+      _qr = null;
+      _reconnectAttempt = 0;
+      _clearReconnect();
+      auditService.recordWhatsApp("ok", `Sesión "${SESSION}" conectada`, "runtime");
+      return;
     }
+    if (state === "CONFLICT") {
+      console.warn("⚠️  Estado WhatsApp: CONFLICT — intentando retomar...");
+      auditService.recordWhatsApp("error", "Estado: CONFLICT", "runtime");
+      client.useHere().catch(() => {});
+      return;
+    }
+    if (DEAD_STATES.has(state)) {
+      if (_intentionalClose) return;
+      console.warn("⚠️  WhatsApp cayó:", state);
+      if (_client === client) _client = null;
+      _markDisconnected(`Estado: ${state}`);
+      client.close().catch(() => {});
+    }
+  });
+
+  client.on("disconnected", (reason) => {
+    if (_intentionalClose) return;
+    console.warn("⚠️  WhatsApp disconnected:", reason);
+    if (_client === client) _client = null;
+    _markDisconnected(`Desconectado: ${reason}`);
   });
 }
 
 /** Arranca la sesión de WhatsApp. Resuelve cuando queda conectada. */
 async function start() {
-  if (_starting || _state === "connected") return;
+  if (_starting) return;
+  if (_state === "connected" && _client) return;
   _starting = true;
   _state = "starting";
   _qr = null;
+  _clearReconnect();
   try {
+    if (_client) {
+      _intentionalClose = true;
+      await _disposeClient();
+      _intentionalClose = false;
+    }
     _client = await venom.create(
       { session: SESSION, browser: BROWSER, headless: true, logQR: true },
-      (qr) => _onQR(qr), // catchQR
-      () => {} // statusFind
+      (qr) => _onQR(qr),
+      (status) => {
+        if (status === "qrReadSuccess" || status === "successChat") {
+          _state = _state === "qr" ? "starting" : _state;
+        }
+      }
     );
     _state = "connected";
     _qr = null;
+    _reconnectAttempt = 0;
     console.log("✅ Aria conectada a WhatsApp. Esperando mensajes...");
     auditService.recordWhatsApp("ok", `Sesión "${SESSION}" conectada`);
 
-    // Captura los IDs propios (host) para no responderse a sí mismo. En multi-dispositivo
-    // el host tiene número (@c.us) y a veces un LID (@lid); registramos AMBOS porque los
-    // auto-mensajes pueden llegar en cualquiera de los dos formatos.
     try {
       const host = await _client.getHostDevice();
       const wid = host?.wid || host?.me?._serialized || host?.id?._serialized || null;
@@ -67,11 +147,12 @@ async function start() {
       console.warn("No se pudo obtener el número del host:", e.message);
     }
 
-    _attachHandlers();
+    _attachHandlers(_client);
   } catch (e) {
     _state = "disconnected";
     auditService.recordWhatsApp("error", e.message, "startup");
     console.error("❌ No se pudo iniciar WhatsApp:", e.message);
+    _scheduleReconnect(e.message);
   } finally {
     _starting = false;
   }
@@ -82,6 +163,9 @@ async function start() {
  * No espera a la reconexión: el QR aparecerá vía polling de estado.
  */
 async function restart() {
+  _intentionalClose = true;
+  _clearReconnect();
+  _reconnectAttempt = 0;
   if (_client) {
     try { await _client.logout(); } catch {}
     try { await _client.close(); } catch {}
@@ -89,8 +173,8 @@ async function restart() {
   _client = null;
   _qr = null;
   _state = "disconnected";
+  _intentionalClose = false;
   auditService.recordWhatsApp("error", "Sesión reiniciada manualmente", "runtime");
-  // arranca en background; el FE verá el QR al pollear el estado
   start().catch((e) => console.error("Error al reiniciar WhatsApp:", e.message));
   return { state: _state };
 }
@@ -103,22 +187,56 @@ function getClient() {
   return _client;
 }
 
+function _extractJid(st) {
+  if (!st) return null;
+  if (typeof st === "string" && st.includes("@")) return st;
+  const wid = st.jid || st.wid || st.id || st.lid;
+  if (!wid) return null;
+  if (typeof wid === "string") return wid;
+  return wid._serialized || (typeof wid.toString === "function" ? wid.toString() : null);
+}
+
+/**
+ * Resuelve el chatId enviable (@lid si WhatsApp lo usa, o un sibling guardado).
+ * El historial del panel sigue usando el contactId original.
+ */
+async function resolveChatId(contactId) {
+  if (!_client || _state !== "connected") {
+    throw new Error("WhatsApp no está conectado");
+  }
+  if (typeof contactId === "string" && contactId.endsWith("@lid")) return contactId;
+
+  const number = String(contactId || "").replace(/@.+$/, "").replace(/\D/g, "");
+  if (number) {
+    const lid = await Contact.findOne({ number, contactId: /@lid$/ }).lean();
+    if (lid?.contactId) return lid.contactId;
+  }
+
+  try {
+    const st = await _client.checkNumberStatus(contactId);
+    const jid = _extractJid(st);
+    if (jid && jid !== contactId) {
+      console.log(`📤  Destino resuelto ${contactId} → ${jid}`);
+      return jid;
+    }
+  } catch (e) {
+    console.warn(`checkNumberStatus falló para ${contactId}:`, e?.message || e);
+  }
+  return contactId;
+}
+
 /**
  * Envía un texto a un contacto desde el panel (Fase 5 — responder desde la app).
  * Lanza si no hay sesión conectada o si el envío falla, para que el controlador
  * pueda devolver un error claro al frontend.
  */
 async function sendText(contactId, text) {
-  if (!_client || _state !== "connected") {
-    throw new Error("WhatsApp no está conectado");
-  }
-  return _client.sendText(contactId, text);
+  const dest = await resolveChatId(contactId);
+  return _client.sendText(dest, text);
 }
 
 async function sendFileBase64(contactId, { base64, filename, mimetype, caption }) {
-  if (!_client || _state !== "connected") {
-    throw new Error("WhatsApp no está conectado");
-  }
+  const dest = await resolveChatId(contactId);
 
   const fs = require("fs");
   const path = require("path");
@@ -132,7 +250,7 @@ async function sendFileBase64(contactId, { base64, filename, mimetype, caption }
   try {
     fs.writeFileSync(tmpPath, Buffer.from(base64, "base64"));
     const isImage = (mimetype || "").startsWith("image/");
-    console.log(`📤  Enviando ${isImage ? "imagen" : "archivo"}: ${filename} (${fs.statSync(tmpPath).size} bytes) → ${contactId}`);
+    console.log(`📤  Enviando ${isImage ? "imagen" : "archivo"}: ${filename} (${fs.statSync(tmpPath).size} bytes) → ${dest}`);
 
     // Parchear _prepareMedia en el browser buscando los módulos reales de webpack
     await _client.page.evaluate(() => {
@@ -197,11 +315,11 @@ async function sendFileBase64(contactId, { base64, filename, mimetype, caption }
     });
 
     if (isImage) {
-      return await _client.sendImage(contactId, tmpPath, caption || "", filename);
+      return await _client.sendImage(dest, tmpPath, caption || "", filename);
     }
-    return await _client.sendFile(contactId, tmpPath, filename, caption || "");
+    return await _client.sendFile(dest, tmpPath, filename, caption || "");
   } catch (err) {
-    console.error(`📤  Error enviando archivo a ${contactId}:`, err?.message || err);
+    console.error(`📤  Error enviando archivo a ${dest}:`, err?.message || err);
     throw err;
   } finally {
     try { fs.unlinkSync(tmpPath); } catch {}

@@ -31,6 +31,8 @@ const settingsSchema = new Schema({
   retention: {
     days: { type: Number, default: 30 },
   },
+  // IANA TZ para el horario de Sleep (20:00–08:00). Independiente del reloj del VPS.
+  timezone: { type: String, default: "America/Argentina/Buenos_Aires" },
 });
 
 module.exports = model("Settings", settingsSchema);

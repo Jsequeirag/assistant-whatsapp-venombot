@@ -1,13 +1,23 @@
 const Message = require("../models/Message");
 
+const MAX_MEDIA_B64 = 5 * 1024 * 1024;
+
 /** Guarda un turno de la conversación (entrante o saliente). Nunca rompe el flujo del bot. */
 async function save({ contactId, contactName, role, content, via, aiClassification, isTranscribed, mediaData, mediaType }) {
-  return Message.create({ contactId, contactName, role, content, via, aiClassification, isTranscribed, mediaData, mediaType });
+  let media = mediaData;
+  let type = mediaType;
+  if (media && media.length > MAX_MEDIA_B64) {
+    console.warn(`⚠️  mediaData omitido (${media.length} chars) para ${contactId}`);
+    media = undefined;
+    type = undefined;
+  }
+  return Message.create({ contactId, contactName, role, content, via, aiClassification, isTranscribed, mediaData: media, mediaType: type });
 }
 
-/** Devuelve el historial de un contacto en orden cronológico (más antiguo primero). */
+/** Devuelve los últimos `limit` mensajes, en orden cronológico (más antiguo primero). */
 async function getByContact(contactId, { limit = 200 } = {}) {
-  return Message.find({ contactId }).sort({ createdAt: 1 }).limit(limit).lean();
+  const rows = await Message.find({ contactId }).sort({ createdAt: -1 }).limit(limit).lean();
+  return rows.reverse();
 }
 
 /**

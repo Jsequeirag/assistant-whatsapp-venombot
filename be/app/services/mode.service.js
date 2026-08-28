@@ -1,10 +1,36 @@
 const Settings = require("../models/Settings");
+const { DEFAULT_TZ } = require("../config");
 
 const SLEEP_START = 20;
 const SLEEP_END = 8;
 
-function isInSleepHours() {
-  const h = new Date().getHours();
+function normalizeTimeZone(tz) {
+  const value = (tz || "").trim();
+  if (!value) return null;
+  try {
+    Intl.DateTimeFormat("en-US", { timeZone: value });
+    return value;
+  } catch {
+    return null;
+  }
+}
+
+function hourInTimeZone(timeZone) {
+  try {
+    const parts = new Intl.DateTimeFormat("en-GB", {
+      timeZone,
+      hour: "2-digit",
+      hourCycle: "h23",
+    }).formatToParts(new Date());
+    const h = Number(parts.find((p) => p.type === "hour")?.value);
+    return Number.isFinite(h) ? h : new Date().getHours();
+  } catch {
+    return new Date().getHours();
+  }
+}
+
+function isInSleepHours(timeZone) {
+  const h = hourInTimeZone(timeZone || DEFAULT_TZ);
   return h >= SLEEP_START || h < SLEEP_END;
 }
 
@@ -22,7 +48,8 @@ async function getOrCreateSettings() {
 async function getPresence() {
   const s = await getOrCreateSettings();
   if (s.dnd.active) return { status: "dnd", reason: s.dnd.reason };
-  if (s.sleep.active && isInSleepHours()) return { status: "sleep", reason: s.sleep.reason };
+  const tz = normalizeTimeZone(s.timezone) || DEFAULT_TZ;
+  if (s.sleep.active && isInSleepHours(tz)) return { status: "sleep", reason: s.sleep.reason };
   return { status: "available", reason: "" };
 }
 
@@ -68,6 +95,7 @@ async function getSettings() {
       voiceModel: s.groq?.voiceModel || "whisper-large-v3-turbo",
     },
     retention: { days: s.retention?.days ?? 30 },
+    timezone: normalizeTimeZone(s.timezone) || DEFAULT_TZ,
   };
 }
 
@@ -103,7 +131,7 @@ async function updateDnd({ active, reason }) {
   await Settings.updateOne({}, { $set: update });
 }
 
-async function updateSleep({ active, reason }) {
+async function updateSleep({ active, reason, timezone }) {
   await getOrCreateSettings();
   const update = {};
   if (active !== undefined) {
@@ -111,7 +139,11 @@ async function updateSleep({ active, reason }) {
     if (!active) update["sleep.respondedContacts"] = [];
   }
   if (reason !== undefined) update["sleep.reason"] = reason;
-  await Settings.updateOne({}, { $set: update });
+  if (timezone !== undefined) {
+    const tz = normalizeTimeZone(timezone);
+    if (tz) update.timezone = tz;
+  }
+  if (Object.keys(update).length) await Settings.updateOne({}, { $set: update });
 }
 
 async function updateAutoAssist({ globalEnabled }) {
@@ -156,4 +188,5 @@ module.exports = {
   updateIdentity,
   updateRetention,
   getRetentionDays,
+  normalizeTimeZone,
 };

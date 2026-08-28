@@ -2,6 +2,17 @@ const contactService = require("../services/contact.service");
 const messageService = require("../services/message.service");
 const whatsappService = require("../services/whatsapp.service");
 
+/** Express ya decodifica params; un `%` suelto no debe tirar URIError 500. */
+function contactIdFrom(req) {
+  const raw = req.params.id;
+  if (typeof raw !== "string") return "";
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    return raw;
+  }
+}
+
 async function list(req, res) {
   res.json(await contactService.getAll());
 }
@@ -10,11 +21,12 @@ async function create(req, res) {
   const { name, number } = req.body;
   if (!number) return res.status(400).json({ error: "Número requerido" });
   const contact = await contactService.create(number, name);
+  if (!contact) return res.status(400).json({ error: "Número inválido" });
   res.status(201).json(contact);
 }
 
 async function update(req, res) {
-  const decoded = decodeURIComponent(req.params.id);
+  const decoded = contactIdFrom(req);
   const { name } = req.body;
   const contact = await contactService.update(decoded, { name });
   if (!contact) return res.status(404).json({ error: "Contacto no encontrado" });
@@ -22,7 +34,7 @@ async function update(req, res) {
 }
 
 async function remove(req, res) {
-  const decoded = decodeURIComponent(req.params.id);
+  const decoded = contactIdFrom(req);
   const contact = await contactService.remove(decoded);
   if (!contact) return res.status(404).json({ error: "Contacto no encontrado" });
   res.json({ ok: true });
@@ -37,13 +49,13 @@ async function getMessagesSummary(req, res) {
 }
 
 async function getMessages(req, res) {
-  const contactId = decodeURIComponent(req.params.id);
+  const contactId = contactIdFrom(req);
   const messages = await messageService.getByContact(contactId);
   res.json(messages);
 }
 
 async function reply(req, res) {
-  const contactId = decodeURIComponent(req.params.id);
+  const contactId = contactIdFrom(req);
   const text = (req.body?.text || "").trim();
   if (!text) return res.status(400).json({ error: "Texto requerido" });
 
@@ -67,7 +79,7 @@ async function reply(req, res) {
 }
 
 async function replyFile(req, res) {
-  const contactId = decodeURIComponent(req.params.id);
+  const contactId = contactIdFrom(req);
   const { base64, filename, mimetype, caption } = req.body || {};
   if (!base64 || !filename) return res.status(400).json({ error: "base64 y filename requeridos" });
 
@@ -79,14 +91,19 @@ async function replyFile(req, res) {
     return res.status(503).json({ error: err?.message || "No se pudo enviar el archivo" });
   }
 
-  // Guardar en el historial: caption si la hay, o el nombre del archivo como indicador
   const content = caption?.trim() || `[${filename}]`;
+  const raw = typeof base64 === "string" && base64.includes("base64,")
+    ? base64.slice(base64.indexOf("base64,") + 7)
+    : base64;
+  const isVisual = (mimetype || "").startsWith("image/") || mimetype === "video/mp4";
   const message = await messageService.save({
     contactId,
     contactName: contact?.name || "",
     role: "assistant",
     content,
     via: "manual",
+    mediaData: isVisual ? raw : undefined,
+    mediaType: isVisual ? mimetype : undefined,
   });
   contactService.addToHistory(contactId, "model", content);
   res.status(201).json(message);

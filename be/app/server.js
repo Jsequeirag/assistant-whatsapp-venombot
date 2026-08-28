@@ -15,21 +15,29 @@ app.use(express.json({ limit: "20mb" }));
 app.get("/", (req, res) => res.json({ status: "Aria API running" }));
 app.use("/api", routes);
 
+app.use((err, req, res, next) => {
+  console.error("API error:", err?.message || err);
+  if (res.headersSent) return next(err);
+  const status = Number(err.status || err.statusCode) || 500;
+  res.status(status).json({ error: err.message || "Error interno" });
+});
+
 /**
  * Carga la config de Groq desde Mongo y la aplica al llm.service.
  * Si Mongo aún no tiene key pero sí hay una en .env, la siembra (para que
  * aparezca en el FE y se gestione desde ahí en adelante).
  */
 async function initLlm() {
-  let { apiKey, model } = await modeService.getGroqConfig();
+  let { apiKey, model, baseUrl, voiceModel } = await modeService.getGroqConfig();
   if (!apiKey && GROQ_API_KEY) {
     await modeService.updateGroq({ apiKey: GROQ_API_KEY, model: model || GROQ_MODEL });
     apiKey = GROQ_API_KEY;
     model = model || GROQ_MODEL;
     console.log("🔑 Groq API key sembrada desde .env hacia MongoDB.");
   }
-  llmService.configure({ apiKey, model });
-  console.log(`🤖 Groq configurado (${llmService.hasKey() ? "key OK" : "SIN key"}, modelo: ${llmService.getModel()}).`);
+  llmService.configure({ apiKey, model, baseUrl, voiceModel });
+  const provider = baseUrl ? `baseUrl=${baseUrl}` : "Groq";
+  console.log(`🤖 LLM configurado (${llmService.hasKey() ? "key OK" : "SIN key"}, modelo: ${llmService.getModel()}, ${provider}, voice: ${voiceModel || "default"}).`);
 }
 
 async function startServer() {

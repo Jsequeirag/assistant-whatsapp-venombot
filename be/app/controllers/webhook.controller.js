@@ -14,6 +14,25 @@ const IGNORED_SUFFIXES = ["@g.us", "@broadcast", "@newsletter"];
 const SELF_IDS = new Set();
 let HOST_ID = null;
 
+// Una cola por contacto: dos mensajes seguidos no pueden saludar / clasificar en paralelo.
+const _contactQueues = new Map();
+
+function enqueueByContact(contactId, task) {
+  const key = contactId || "_unknown";
+  const prev = _contactQueues.get(key) || Promise.resolve();
+  const next = prev
+    .then(task, task)
+    .catch((err) => console.error("Error procesando mensaje:", err?.message || err));
+  _contactQueues.set(key, next);
+  next.finally(() => {
+    if (_contactQueues.get(key) === next) _contactQueues.delete(key);
+  });
+  return next;
+}
+
+/** Tope de binario persistido en Mongo (BSON máx. 16 MB; dejamos holgura). */
+const MAX_MEDIA_BYTES = 3.5 * 1024 * 1024;
+
 function registerSelfId(id) {
   if (id && typeof id === "string" && !SELF_IDS.has(id)) {
     SELF_IDS.add(id);
@@ -59,8 +78,8 @@ async function safeSend(client, contactId, text, label, contactName = "") {
   }
 }
 
-// Reset por inactividad: si el contacto pasa este tiempo sin escribir, su sesión
-// se reinicia y se lo trata como si escribiera por primera vez (re-saluda).
+// Reset por inactividad: historial in-memory y "recado completo" se reinician.
+// NO toca respondedContacts de DND/Sleep: esos saludos duran hasta apagar el modo.
 const SESSION_RESET_MS = 20 * 60 * 1000; // 20 minutos
 
 // Solo procesar mensajes que llegaron después de que el bot arrancó.
@@ -109,6 +128,29 @@ function getMessageText(msg) {
   return null;
 }
 
+/** Teléfono real si WhatsApp lo expone; no usar el dígito de un @lid como número. */
+function extractPhoneNumber(msg, contactId) {
+  const candidates = [
+    msg.sender?.id?._serialized,
+    typeof msg.sender?.id === "string" ? msg.sender.id : null,
+    msg.sender?.wid?._serialized,
+    typeof msg.sender?.wid === "string" ? msg.sender.wid : null,
+    msg.sender?.phone,
+    msg.author,
+  ];
+  for (const c of candidates) {
+    if (typeof c === "string" && c.includes("@c.us")) {
+      const digits = c.replace(/@.+$/, "").replace(/\D/g, "");
+      if (digits) return digits;
+    }
+  }
+  if (typeof contactId === "string" && contactId.endsWith("@c.us")) {
+    const digits = contactId.replace(/@.+$/, "").replace(/\D/g, "");
+    if (digits) return digits;
+  }
+  return null;
+}
+
 async function processMessage(client, msg) {
   const from = msg.from || "";
   // Ignorar: grupos, listas de difusión, canales (newsletter), propios y sistema.
@@ -133,7 +175,9 @@ async function processMessage(client, msg) {
 
   const contactId = msg.from;
   const pushName = msg.sender?.pushname || msg.sender?.name || "";
-  const contact = await contactService.getOrCreate(contactId, pushName);
+  const contact = await contactService.getOrCreate(contactId, pushName, {
+    phoneNumber: extractPhoneNumber(msg, contactId),
+  });
 
   // ─── Descifrado de medios de WhatsApp (compartido) ────────────────────────
   // Descarga y descifra un archivo de WA usando el browser context de Puppeteer.
@@ -215,9 +259,13 @@ async function processMessage(client, msg) {
     const mimeHint = msg.type === "gif" ? "video/mp4" : (msg.mimetype || "image/jpeg");
     const result = await decryptWAMedia(mimeHint, { compress: isImgType });
     if (result) {
-      mediaData = result.buffer.toString("base64");
-      mediaType = result.mimeType;
-      console.log(`🖼️  [${contact.name}] ${msg.type} descargado (${result.buffer.length} bytes)`);
+      if (result.buffer.length > MAX_MEDIA_BYTES) {
+        console.warn(`🖼️  [${contact.name}] ${msg.type} no se guarda en Mongo (${result.buffer.length} bytes > ${MAX_MEDIA_BYTES})`);
+      } else {
+        mediaData = result.buffer.toString("base64");
+        mediaType = result.mimeType;
+        console.log(`🖼️  [${contact.name}] ${msg.type} descargado (${result.buffer.length} bytes)`);
+      }
     } else {
       console.warn(`🖼️  [${contact.name}] No se pudo descargar ${msg.type}`);
     }
@@ -259,19 +307,21 @@ async function processMessage(client, msg) {
 
   console.log(`💬 [${new Date().toLocaleTimeString("es")}] ${contact.name} <${contactId}>: ${messageText.slice(0, 80)}`);
 
-  // ─── Reset por inactividad (>20 min) → tratar como primera vez ─────────────
+  // ─── Reset por inactividad (>20 min) → historial fresco, sin re-saludar DND/Sleep
   if (contactService.isSessionExpired(contactId, SESSION_RESET_MS)) {
     contactService.resetSession(contactId);
-    await modeService.clearRespondedContact(contactId);
     console.log(`🔄 Sesión reiniciada para ${contact.name} (>20 min sin actividad)`);
   }
   contactService.touchSession(contactId);
 
   // ─── Clasificar si es recado (en todos los casos) ──────────────────────────
-  // Se clasifica ANTES de persistir para guardar la interpretación IA con el mensaje.
-  const { isRecado, summary, priority } = await llmService
-    .classifyRecado(contact.name, contactService.getSession(contactId).conversationHistory, messageText)
-    .catch(() => ({ isRecado: false, summary: null, priority: "baja" }));
+  // Etiquetas genéricas de medio no son recado: no gastar un turno de Groq.
+  const skipClassify = messageText.startsWith("(el contacto envió");
+  const { isRecado, summary, priority } = skipClassify
+    ? { isRecado: false, summary: null, priority: "baja" }
+    : await llmService
+        .classifyRecado(contact.name, contactService.getSession(contactId).conversationHistory, messageText)
+        .catch(() => ({ isRecado: false, summary: null, priority: "baja" }));
 
   // Persistir el mensaje entrante con su clasificación IA. No bloquea el flujo.
   messageService
@@ -294,7 +344,6 @@ async function processMessage(client, msg) {
       content: summary || messageText,
       originalContent: messageText,
       priority,
-      timestamp: new Date(),
     });
     console.log(`📩 Recado [${priority}] de ${contact.name}: ${(summary || messageText).slice(0, 60)}`);
   }
@@ -316,10 +365,18 @@ async function processMessage(client, msg) {
     ? await modeService.hasResponded(status, contactId)
     : session.greetedOnce;
 
-  // ─── Filtro de contenido inapropiado ──────────────────────────────────────
-  const { appropriate, type: contentType } = await llmService
-    .classifyContent(messageText)
-    .catch(() => ({ appropriate: true, type: null }));
+  // ─── ¿El bot debe responder? ───────────────────────────────────────────────
+  // Responde si hay presencia activa (DND/Sleep) o si el asistente global está ON.
+  // Disponible + asistente global OFF = silencio total (solo se clasificó el recado).
+  if (status === "available" && !globalAssist) {
+    console.log(`   ↳ silencio: disponible y asistente global OFF`);
+    return;
+  }
+
+  // ─── Filtro de contenido inapropiado (solo si vamos a hablar) ─────────────
+  const { appropriate, type: contentType } = skipClassify
+    ? { appropriate: true, type: null }
+    : await llmService.classifyContent(messageText).catch(() => ({ appropriate: true, type: null }));
 
   if (!appropriate) {
     console.log(`🚫 Contenido inapropiado bloqueado de ${contact.name}: [${contentType}]`);
@@ -357,32 +414,19 @@ Mensaje recibido: "${messageText.slice(0, 200)}"`;
     return;
   }
 
-  // ─── ¿El bot debe responder? ───────────────────────────────────────────────
-  // Responde si hay presencia activa (DND/Sleep) o si el asistente global está ON.
-  // Disponible + asistente global OFF = silencio total (solo se clasificó el recado).
-  if (status === "available" && !globalAssist) {
-    console.log(`   ↳ silencio: disponible y asistente global OFF`);
-    return;
-  }
+  // ─── Primer mensaje DND/Sleep: un saludo por modo (hasta que se apague) ────
+  // "disponible" + auto-asistir NO pasa por acá: el primer turno lo atiende
+  // auto-asistir, sin afirmar que el dueño está ausente.
 
-  // ─── Primer mensaje: saludo según el estado de presencia ───────────────────
-  // Saluda a TODOS una vez (con o sin auto-asistir por contacto). Valida motivo/contexto:
-  // default si no hay, IA si hay. DND/Sleep registran el saludo de forma persistente
-  // (se resetea al apagar el modo); "disponible" usa la sesión en memoria.
-
-  if (!alreadyGreeted) {
-    const greetMode = status === "available" ? "assist" : status;
-    // Para medios sin caption: el LLM no debe intentar interpretar la imagen.
-    // Se le pasa una descripción neutral del evento en lugar de la etiqueta literal.
+  if (greetingTracked && !alreadyGreeted) {
     const greetText = isVisualMediaOnly
       ? `el contacto acaba de enviarte ${msg.type === "image" ? "una imagen" : msg.type === "sticker" ? "un sticker" : "un GIF"} sin texto adicional — saludalo brevemente y ofrecete a tomar un recado si lo necesita`
       : messageText;
-    const greeting = await generateModeResponse(greetMode, ownerName, assistantName, statusReason, greetText);
+    const greeting = await generateModeResponse(status, ownerName, assistantName, statusReason, greetText);
     const sent = await safeSend(client, contactId, greeting, `saludo:${status}`, contact.name);
     if (!sent) return; // si no se pudo enviar, no marcamos como saludado (reintenta luego)
-    if (greetingTracked) await modeService.markResponded(status, contactId);
+    await modeService.markResponded(status, contactId);
     session.greetedOnce = true;
-    // Si va a seguir conversando, el saludo entra al historial para dar contexto.
     if (globalAssist) {
       contactService.addToHistory(contactId, "user", messageText);
       contactService.addToHistory(contactId, "model", greeting);
@@ -391,9 +435,9 @@ Mensaje recibido: "${messageText.slice(0, 200)}"`;
     return;
   }
 
-  // ─── Ya saludamos: sin auto-asistir por contacto → silencio (solo recados) ──
+  // ─── Sin auto-asistir: silencio (DND/Sleep ya saludó, o no hay nada que decir)
   if (!globalAssist) {
-    console.log(`   ↳ silencio: ya saludado, contacto sin auto-asistir`);
+    console.log(`   ↳ silencio: ya saludado, sin auto-asistir`);
     return;
   }
   if (contactService.isRecadoCompleted(contactId)) {
@@ -402,19 +446,21 @@ Mensaje recibido: "${messageText.slice(0, 200)}"`;
   }
 
   // ─── Auto-asistir: seguir la conversación ──────────────────────────────────
+  // available + sesión nueva → presentarse. DND/Sleep ya saludó (también tras el reset de 20 min).
+  const isFirstAssist = !alreadyGreeted;
   contactService.addToHistory(contactId, "user", messageText);
 
   const mediaDesc = msg.type === "image" ? "una imagen" : msg.type === "sticker" ? "un sticker" : "un GIF";
-  const response = await llmService
-    .generateResponse(
-      isVisualMediaOnly
-        // Para medios visuales sin caption: acuse breve y natural, sin intentar describir el contenido
-        ? `Eres ${assistantName}, asistente de ${ownerName}. El contacto acaba de enviar ${mediaDesc}.
+  const visualPrompt = `Eres ${assistantName}, asistente de ${ownerName}. El contacto acaba de enviar ${mediaDesc}.
 No podés ver el contenido. Respondé con UN mensaje muy breve y natural reconociendo el envío.
 NO preguntes qué hay en la imagen ni pidas que lo expliquen.
-Ejemplos de tono: "Recibido 👍", "Perfecto, se lo hago saber a ${ownerName}.", "Anotado."
-Sé natural y conciso. Mismo idioma que el contacto.`
-        : buildAutoAssistPrompt(ownerName, assistantName),
+NO digas que ${ownerName} está ausente o no disponible.
+${isFirstAssist ? `Presentate muy breve como ${assistantName}, el asistente de ${ownerName}. ` : ""}Ejemplos de tono: "Recibido 👍", "Perfecto, se lo hago saber a ${ownerName}.", "Anotado."
+Sé natural y conciso. Mismo idioma que el contacto.`;
+
+  const response = await llmService
+    .generateResponse(
+      isVisualMediaOnly ? visualPrompt : buildAutoAssistPrompt(ownerName, assistantName, isFirstAssist),
       isVisualMediaOnly ? [] : session.conversationHistory.slice(0, -1),
       messageText
     )
@@ -423,6 +469,7 @@ Sé natural y conciso. Mismo idioma que el contacto.`
   if (response) {
     await safeSend(client, contactId, response, "auto-assist", contact.name);
     contactService.addToHistory(contactId, "model", response);
+    session.greetedOnce = true;
     console.log(`🤖 Auto-asistir: respondí a ${contact.name}`);
   }
 
@@ -447,7 +494,9 @@ function defaultModeMessage(mode, ownerName, assistantName) {
   if (mode === "sleep") {
     return `${intro} En este momento ${ownerName} está descansando y no se encuentra disponible. Puedes dejarle un recado y lo verá mañana a partir de las 8:00 am. 🌙`;
   }
-  // dnd y assist comparten el default genérico
+  if (mode === "assist") {
+    return `${intro} ¿Deseas dejarle un recado o hay algo en lo que pueda asistirte?`;
+  }
   return `${intro} En este momento ${ownerName} no se encuentra disponible. ¿Deseas dejarle un recado? Con gusto se lo haré llegar. 📝`;
 }
 
@@ -508,10 +557,13 @@ Respondé ÚNICAMENTE con el mensaje, sin comillas ni prefijos.`;
   }
 }
 
-function buildAutoAssistPrompt(ownerName, assistantName) {
+function buildAutoAssistPrompt(ownerName, assistantName, isFirstMessage = false) {
+  const presentation = isFirstMessage
+    ? `Es el PRIMER mensaje de esta conversación. Presentate brevemente como ${assistantName}, el asistente de ${ownerName}. NO digas que ${ownerName} está ausente, ocupado o no disponible: estás atendiendo el chat de forma activa. Después de presentarte, respondé a lo que la persona escribió.`
+    : `Ya te presentaste como ${assistantName} en el primer mensaje: NO vuelvas a presentarte ni repitas en cada mensaje que sos asistente; hablá con naturalidad como lo haría un asistente real.`;
+
   return `Eres ${assistantName}, el asistente personal de ${ownerName}. Sos ${assistantName}, NO sos ${ownerName}.
-Ya te presentaste como ${assistantName} en el primer mensaje: NO vuelvas a presentarte ni repitas
-en cada mensaje que sos asistente; hablá con naturalidad como lo haría un asistente real.
+${presentation}
 Tu objetivo: conversar de forma cálida y humana, entender qué necesita el contacto y tomar su recado.
 Cuando la persona ya comunicó lo que necesitaba, cerrá con naturalidad confirmando que se lo vas a pasar
 a ${ownerName} (ej: "Perfecto, le aviso a ${ownerName}." / "Anotado, se lo hago saber." / "Entendido, le dejo el mensaje.").
@@ -542,4 +594,4 @@ Si el mensaje contiene contenido vulgar, violento, sexual, amenazas u ofensivo, 
 sin entrar en el tema: "Lo siento, no puedo responder a ese tipo de contenido."`;
 }
 
-module.exports = { processMessage, setHostId, registerSelfId };
+module.exports = { processMessage, setHostId, registerSelfId, enqueueByContact };

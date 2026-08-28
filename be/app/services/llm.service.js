@@ -183,7 +183,8 @@ Responde ÚNICAMENTE con JSON válido, sin markdown:
  * @returns {Promise<boolean>}
  */
 async function detectRecadoCompleted(conversationHistory) {
-  if (conversationHistory.length < 2) return false;
+  // Hace falta al menos dos turnos del contacto (4 mensajes) para no gastar Groq en el saludo.
+  if (conversationHistory.length < 4) return false;
 
   const system = `Eres un analizador de conversaciones de WhatsApp.
 Determina si la persona que escribe ya COMPLETÓ su recado (ya comunicó lo que necesitaba decir).
