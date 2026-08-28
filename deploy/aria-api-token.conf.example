@@ -1,0 +1,9 @@
+# Copiar a: /etc/nginx/snippets/aria-api-token.conf
+# El valor DEBE ser el mismo que ARIA_API_TOKEN en be/.env
+# (no commitear el archivo copiado).
+#
+#   sudo mkdir -p /etc/nginx/snippets
+#   sudo cp deploy/aria-api-token.conf.example /etc/nginx/snippets/aria-api-token.conf
+#   sudo nano /etc/nginx/snippets/aria-api-token.conf
+
+proxy_set_header X-Aria-Token "CAMBIAR_POR_EL_TOKEN";

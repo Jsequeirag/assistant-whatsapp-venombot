@@ -16,6 +16,7 @@ fe/.env
 
 # ── WhatsApp / VenomBot session data ──────────────────────────
 be/tokens/
+be/media/
 be/session/
 be/.chromium/
 be/bot/state.json
