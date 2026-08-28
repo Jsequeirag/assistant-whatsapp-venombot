@@ -102,6 +102,52 @@
 }
 .ds-btn-primary:hover { opacity: 0.8; }
 
+.ds-empty {
+  text-align: center;
+  color: var(--ds-text-faint);
+  padding: var(--ds-space-12) 0;
+  font-family: var(--ds-font-body);
+  font-weight: var(--ds-fw-regular);
+  font-size: var(--ds-fs-xs);
+  letter-spacing: var(--ds-ls-caps);
+  text-transform: uppercase;
+}
+.ds-empty.compact { padding: var(--ds-space-6) 0; }
+
+.ds-ghost-btn {
+  font-family: var(--ds-font-body);
+  font-weight: var(--ds-fw-regular);
+  font-size: var(--ds-fs-xs);
+  letter-spacing: var(--ds-ls-caps);
+  text-transform: uppercase;
+  padding: var(--ds-space-1);
+  background: none;
+  border: none;
+  color: var(--ds-text-faint);
+  cursor: pointer;
+  transition: color var(--ds-dur-hover), border-color var(--ds-dur-hover);
+}
+.ds-ghost-btn:hover { color: var(--ds-text-muted); }
+.ds-ghost-btn.bordered {
+  padding: var(--ds-space-1) var(--ds-space-2);
+  border: 1px solid var(--ds-border-soft);
+}
+.ds-ghost-btn.bordered:hover { border-color: var(--ds-border); }
+
+.ds-icon-btn {
+  height: 36px;
+  width: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ds-text-faint);
+  background: none;
+  border: none;
+  cursor: pointer;
+  transition: color var(--ds-dur-hover);
+}
+.ds-icon-btn:hover { color: var(--ds-text-muted); }
+
 .ds-btn-secondary {
   background: var(--ds-text-strong);
   color: var(--ds-bg);

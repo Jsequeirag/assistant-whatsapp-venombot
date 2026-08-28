@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 
-/** Decode base64 only when the block is near the viewport; uses a blob URL. */
-export default function LazyMedia({ data, type, alt = "" }) {
+/** Carga el medio al acercarse al viewport. Prefiere `src` (URL); `data` es Base64 legado. */
+export default function LazyMedia({ src, data, type, alt = "" }) {
   const ref = useRef(null);
   const [visible, setVisible] = useState(false);
   const [url, setUrl] = useState(null);
@@ -20,7 +20,12 @@ export default function LazyMedia({ data, type, alt = "" }) {
   }, []);
 
   useEffect(() => {
-    if (!visible || !data || !type) return undefined;
+    if (!visible) return undefined;
+    if (src) {
+      setUrl(src);
+      return undefined;
+    }
+    if (!data || !type) return undefined;
     let blobUrl;
     try {
       const bin = atob(data);
@@ -34,7 +39,7 @@ export default function LazyMedia({ data, type, alt = "" }) {
     return () => {
       if (blobUrl) URL.revokeObjectURL(blobUrl);
     };
-  }, [visible, data, type]);
+  }, [visible, src, data, type]);
 
   const isVideo = type === "video/mp4" || (type || "").startsWith("video/");
   const frame = {

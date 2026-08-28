@@ -1,9 +1,14 @@
 const BASE = import.meta.env.VITE_API_URL || "";
 
 async function request(method, path, body) {
+  const headers = body !== undefined ? { "Content-Type": "application/json" } : {};
+  const token = (import.meta.env.VITE_ARIA_TOKEN || "").trim();
+  if (token) headers["X-Aria-Token"] = token;
+
   const res = await fetch(`${BASE}/api${path}`, {
     method,
-    headers: body !== undefined ? { "Content-Type": "application/json" } : {},
+    headers,
+    credentials: "same-origin",
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
   const text = await res.text();
@@ -36,6 +41,7 @@ export const api = {
   updateGroq: (data) => request("PATCH", "/settings/groq", data),
   getGroqModels: () => request("GET", "/settings/groq/models"),
   updateRetention: (days) => request("PATCH", "/settings/retention", { days }),
+  updateTestMode: (enabled) => request("PATCH", "/settings/test-mode", { enabled }),
 
   // Auditoría de servicios
   getAudit: () => request("GET", "/audit"),

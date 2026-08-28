@@ -26,7 +26,7 @@ export default function Avatar({ url, name, size = 40 }) {
       alt=""
       loading="lazy"
       className="ds-avatar-circle"
-      style={{ width: size, height: size, flexShrink: 0 }}
+      style={{ width: size, height: size, flexShrink: 0, objectFit: "cover" }}
       onError={() => setBroken(true)}
     />
   );

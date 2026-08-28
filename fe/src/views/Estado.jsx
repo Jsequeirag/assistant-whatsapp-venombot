@@ -2,10 +2,29 @@ import { useState, useEffect } from "react";
 import { api } from "../api/client";
 
 const SERVICE_LABELS = {
-  groq: "Groq (IA)",
+  groq: "IA (OpenAI-compat)",
   mongodb: "MongoDB",
   whatsapp: "WhatsApp",
 };
+
+const LLM_PRESETS = [
+  { id: "groq", label: "Groq", baseUrl: "https://api.groq.com/openai/v1", voice: "whisper-large-v3-turbo" },
+  { id: "openai", label: "OpenAI", baseUrl: "https://api.openai.com/v1", voice: "whisper-1" },
+  { id: "openrouter", label: "OpenRouter", baseUrl: "https://openrouter.ai/api/v1", voice: "" },
+  { id: "xai", label: "xAI", baseUrl: "https://api.x.ai/v1", voice: "" },
+  { id: "custom", label: "Personalizado", baseUrl: "", voice: "" },
+];
+
+function normalizeUrl(url) {
+  return (url || "").trim().replace(/\/+$/, "");
+}
+
+function presetIdFromUrl(url) {
+  const raw = normalizeUrl(url);
+  if (!raw || raw === "https://api.groq.com/openai/v1" || raw === "https://api.groq.com") return "groq";
+  const found = LLM_PRESETS.find((p) => p.id !== "custom" && normalizeUrl(p.baseUrl) === raw);
+  return found ? found.id : "custom";
+}
 
 function StatusDot({ status }) {
   return (
@@ -28,6 +47,24 @@ function WaBadge({ state }) {
     <span className={b.cls}>
       {b.label}
     </span>
+  );
+}
+
+function Toggle({ checked, onChange, label, disabled }) {
+  return (
+    <label className="ds-toggle" style={{ display: "flex", alignItems: "center", gap: "var(--ds-space-3)", cursor: disabled ? "default" : "pointer", opacity: disabled ? 0.5 : 1 }}>
+      <input
+        type="checkbox"
+        checked={checked}
+        disabled={disabled}
+        onChange={(e) => onChange(e.target.checked)}
+        style={{ position: "absolute", opacity: 0, pointerEvents: "none" }}
+      />
+      <div className="ds-toggle-track">
+        <div className="ds-toggle-thumb" />
+      </div>
+      <span style={{ fontFamily: "var(--ds-font-body)", fontWeight: "var(--ds-fw-medium)", fontSize: "var(--ds-fs-xs)", letterSpacing: "var(--ds-ls-caps)", textTransform: "uppercase", color: "var(--ds-text-muted)" }}>{label}</span>
+    </label>
   );
 }
 
@@ -59,6 +96,9 @@ export default function Estado({ active = true }) {
   const [wa, setWa] = useState({ state: "disconnected", qr: null });
   const [restarting, setRestarting] = useState(false);
   const [loadError, setLoadError] = useState(null);
+  const [testMode, setTestMode] = useState(false);
+  const [testModeSaving, setTestModeSaving] = useState(false);
+  const [testModeError, setTestModeError] = useState("");
 
   const loadWa = async () => {
     try {
@@ -74,6 +114,23 @@ export default function Estado({ active = true }) {
     const id = setInterval(loadWa, 4000);
     return () => clearInterval(id);
   }, [active]);
+
+  const toggleTestMode = async (enabled) => {
+    setTestModeSaving(true);
+    setTestModeError("");
+    const prev = testMode;
+    setTestMode(enabled);
+    try {
+      const r = await api.updateTestMode(enabled);
+      setTestMode(!!r.enabled);
+    } catch {
+      setTestMode(prev);
+      setTestModeError("No se pudo cambiar el ambiente de pruebas");
+      setTimeout(() => setTestModeError(""), 3000);
+    } finally {
+      setTestModeSaving(false);
+    }
+  };
 
   const restartWa = async () => {
     if (!confirm("¿Cerrar la sesión actual y generar una nueva? Tendrás que escanear el QR de nuevo.")) return;
@@ -101,6 +158,7 @@ export default function Estado({ active = true }) {
     try {
       const [audit, settings] = await Promise.all([api.getAudit(), api.getSettings()]);
       setCurrent(audit.current || []);
+      setTestMode(!!settings.testMode?.enabled);
       setGroq(settings.groq);
       setModel(settings.groq.model || "");
       setBaseUrl(settings.groq.baseUrl || "");
@@ -219,6 +277,30 @@ export default function Estado({ active = true }) {
           <p style={{ fontFamily: "var(--ds-font-body)", fontWeight: "var(--ds-fw-regular)", fontSize: "var(--ds-fs-xs)", letterSpacing: "var(--ds-ls-caps)", textTransform: "uppercase", color: "var(--ds-text-faint)" }}>Desconectada.</p>
         )}
 
+        <div
+          style={{
+            margin: "var(--ds-space-4) 0",
+            padding: "var(--ds-space-3)",
+            border: testMode ? "1px solid var(--ds-accent)" : "1px solid var(--ds-border-soft)",
+            background: "var(--ds-surface)",
+          }}
+        >
+          <Toggle
+            checked={testMode}
+            disabled={testModeSaving}
+            onChange={toggleTestMode}
+            label={testMode ? "Ambiente de pruebas: activo" : "Ambiente de pruebas"}
+          />
+          <p style={{ fontFamily: "var(--ds-font-body)", fontWeight: "var(--ds-fw-regular)", fontSize: "var(--ds-fs-xs)", color: "var(--ds-text-faint)", lineHeight: 1.6, marginTop: "var(--ds-space-2)" }}>
+            Activalo y escribite a vos mismo en WhatsApp (chat «Tú»). Aria responde ahí para que no dependas de otro número. Las respuestas del bot no se re-procesan. Desactivalo cuando termines.
+          </p>
+          {testModeError && (
+            <p style={{ fontFamily: "var(--ds-font-body)", fontWeight: "var(--ds-fw-regular)", fontSize: "var(--ds-fs-xs)", color: "#ef4444", marginTop: "var(--ds-space-2)" }}>
+              {testModeError}
+            </p>
+          )}
+        </div>
+
         <button
           onClick={restartWa}
           disabled={restarting}
@@ -311,21 +393,42 @@ export default function Estado({ active = true }) {
           </div>
         </div>
 
-        {/* URL base */}
+        {/* Preset + URL base (contrato OpenAI: .../v1) */}
         <div>
           <label style={{ display: "block", fontFamily: "var(--ds-font-body)", fontWeight: "var(--ds-fw-regular)", fontSize: "var(--ds-fs-xs)", letterSpacing: "var(--ds-ls-label)", textTransform: "uppercase", color: "var(--ds-text-faint)", marginBottom: "var(--ds-space-2)" }}>
-            URL base del proveedor
+            Proveedor (OpenAI-compatible)
+          </label>
+          <div className="t-input">
+            <select
+              value={presetIdFromUrl(baseUrl)}
+              onChange={(e) => {
+                const id = e.target.value;
+                const p = LLM_PRESETS.find((x) => x.id === id);
+                if (!p || p.id === "custom") return;
+                setBaseUrl(p.baseUrl);
+                if (p.voice) setVoiceModel(p.voice);
+              }}
+            >
+              {LLM_PRESETS.map((p) => (
+                <option key={p.id} value={p.id}>{p.label}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+        <div>
+          <label style={{ display: "block", fontFamily: "var(--ds-font-body)", fontWeight: "var(--ds-fw-regular)", fontSize: "var(--ds-fs-xs)", letterSpacing: "var(--ds-ls-label)", textTransform: "uppercase", color: "var(--ds-text-faint)", marginBottom: "var(--ds-space-2)" }}>
+            URL base (/v1)
           </label>
           <div className="t-input">
             <input
               type="text"
               value={baseUrl}
               onChange={(e) => setBaseUrl(e.target.value)}
-              placeholder="vacío = Groq  ·  https://openrouter.ai/api/v1"
+              placeholder="vacío = Groq  ·  https://api.openai.com/v1"
             />
           </div>
           <p style={{ fontFamily: "var(--ds-font-body)", fontWeight: "var(--ds-fw-regular)", fontSize: "var(--ds-fs-xs)", color: "var(--ds-border)", marginTop: "var(--ds-space-2)" }}>
-            Vacío → Groq (default) · OpenRouter → https://openrouter.ai/api/v1 · OpenAI → https://api.openai.com/v1
+            Chat Completions. Vacío → https://api.groq.com/openai/v1
           </p>
         </div>
 
@@ -351,7 +454,7 @@ export default function Estado({ active = true }) {
                 type="text"
                 value={model}
                 onChange={(e) => setModel(e.target.value)}
-                placeholder="qwen/qwen3-32b  ·  openai/gpt-4o-mini  ·  gpt-4o"
+                placeholder="qwen/qwen3-32b  ·  gpt-4o-mini  ·  grok-4.5"
               />
             </div>
           )}
@@ -376,7 +479,7 @@ export default function Estado({ active = true }) {
             />
           </div>
           <p style={{ fontFamily: "var(--ds-font-body)", fontWeight: "var(--ds-fw-regular)", fontSize: "var(--ds-fs-xs)", color: "var(--ds-border)", marginTop: "var(--ds-space-2)" }}>
-            Solo aplica cuando el proveedor soporta /audio/transcriptions (Groq, OpenAI).
+            POST /v1/audio/transcriptions. Groq: whisper-large-v3-turbo · OpenAI: whisper-1. Si el proveedor no lo tiene, el audio se etiqueta y no se transcribe.
           </p>
         </div>
 
