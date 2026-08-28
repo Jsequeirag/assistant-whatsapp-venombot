@@ -109,13 +109,24 @@ nano .env
 En el editor, dejá el `.env` así (completá tus valores reales):
 
 ```env
-GROQ_API_KEY=tu_api_key_de_groq
-GROQ_MODEL=qwen/qwen3-32b
+LLM_API_KEY=tu_api_key
+LLM_MODEL=qwen/qwen3-32b
+# vacío = Groq OpenAI-compat; OpenAI → https://api.openai.com/v1
+LLM_BASE_URL=
+LLM_VOICE_MODEL=whisper-large-v3-turbo
 PORT=3000
 NODE_ENV=production
+LISTEN_HOST=127.0.0.1
+ARIA_API_TOKEN=pega_aqui_openssl_rand_hex_24
 VENOM_SESSION=aria
 VENOM_BROWSER=chrome
 MONGODB_URI=tu_string_de_conexion_de_mongodb_atlas
+```
+
+Generá el token antes de pegarlo:
+
+```bash
+openssl rand -hex 24
 ```
 
 Guardar en nano: `Ctrl + O`, `Enter`, luego salir con `Ctrl + X`.
@@ -147,6 +158,17 @@ Esto genera `/var/www/aria/fe/dist`, que es lo que servirá nginx.
 ## Paso 8 — Configurar nginx
 
 ```bash
+# Usuario/contraseña del panel (el navegador lo pide al entrar).
+apt install -y apache2-utils
+htpasswd -c /etc/nginx/.htpasswd-aria aria
+# ↑ te pide la contraseña. Recordala: es la del panel, no la de Groq.
+
+# Token que nginx manda a Express (el mismo ARIA_API_TOKEN de be/.env).
+mkdir -p /etc/nginx/snippets
+cp /var/www/aria/deploy/aria-api-token.conf.example /etc/nginx/snippets/aria-api-token.conf
+nano /etc/nginx/snippets/aria-api-token.conf
+# Reemplazá CAMBIAR_POR_EL_TOKEN por el valor de ARIA_API_TOKEN.
+
 # Copiar la config incluida en el repo
 cp /var/www/aria/deploy/nginx-aria.conf /etc/nginx/sites-available/aria
 
@@ -159,7 +181,7 @@ nginx -t
 systemctl reload nginx
 ```
 
-Probá en el navegador: `http://LA_IP` → deberías ver el panel de Aria.
+Probá en el navegador: `http://LA_IP` → primero pide usuario `aria` y la contraseña del `htpasswd`. Después el panel.
 
 ---
 

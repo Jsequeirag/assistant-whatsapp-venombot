@@ -4,14 +4,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Aria is a 24/7 AI-powered WhatsApp personal assistant with a web dashboard. It connects to WhatsApp via QR code, auto-responds using Groq LLM (Qwen, Llama, DeepSeek), classifies incoming messages as tasks with priority levels, transcribes voice notes via Whisper, and features DND/Sleep modes — all manageable from a React dashboard.
+Aria is a 24/7 AI-powered WhatsApp personal assistant with a web dashboard. It connects to WhatsApp via QR code, auto-responds using an OpenAI-compatible LLM (Groq by default: Qwen, Llama, DeepSeek), classifies incoming messages as recados with priority levels, transcribes voice notes via Whisper, and features DND/Sleep modes — all manageable from a React dashboard.
 
 **Tech Stack:**
 - **Backend:** Node.js 20+, Express 5, TypeScript (VenomBot library)
 - **WhatsApp:** VenomBot (custom fork in `be/src/`), Puppeteer 24 (Chromium)
-- **AI/LLM:** Groq SDK (Qwen3, Llama3, DeepSeek), Whisper for voice transcription
+- **AI/LLM:** OpenAI SDK against any `/v1` Chat Completions provider (default Groq). Whisper for voice.
 - **Database:** MongoDB Atlas, Mongoose 9
-- **Frontend:** React 18, Vite 5, Tailwind CSS 3, Lucide icons
+- **Frontend:** React 18, Vite 5, Tailwind CSS 3 (`fe/`)
 - **Deployment:** PM2, nginx, Let's Encrypt (VPS/DigitalOcean)
 
 ## Repository Structure
@@ -23,15 +23,18 @@ assistant-whatsapp-venombot/
 │   ├── dist/                # Compiled VenomBot library (npm run build)
 │   ├── app/                 # Express application
 │   │   ├── config/          # Environment variables
-│   │   ├── controllers/     # Request handlers (webhook, settings, contacts, etc.)
+│   │   ├── lib/             # Pure helpers (incoming message / mode turn)
+│   │   ├── controllers/     # Request handlers (webhook, settings, contacts, media)
 │   │   ├── models/          # Mongoose schemas (Contact, Message, Recado, Settings)
-│   │   ├── services/        # Business logic (llm, whatsapp, mode, contact, etc.)
+│   │   ├── services/        # Business logic (llm, whatsapp, mode, contact, media)
 │   │   ├── routes/          # Express route definitions
 │   │   ├── db.js            # MongoDB connection
 │   │   └── server.js        # Express app setup
 │   ├── bot/                 # Entry point
 │   │   └── index.js         # Main entry: starts Express + VenomBot
-│   ├── tokens/              # WhatsApp session tokens (auto-generated)
+│   ├── media/               # Incoming/outgoing images (not git; not Mongo Base64)
+│   ├── test/aria/           # Unit tests (npm test) — Venom smoke is test/index.js
+│   ├── tokens/              # WhatsApp session tokens (auto-generated, gitignored)
 │   ├── ecosystem.config.js  # PM2 process configuration
 │   └── package.json
 ├── fe/                      # Frontend (React dashboard)
@@ -58,6 +61,7 @@ npm run build            # Compiles VenomBot TypeScript library (src/ → dist/)
 npm run dev              # Concurrent: compiles TS + starts bot with hot reload
 npm run bot              # Start bot only (requires build first)
 npm run bot:local        # Start with system CA (fixes TLS issues in some networks)
+npm test                 # Aria unit tests (node:test, no Chromium)
 ```
 
 ### Frontend Development
@@ -100,50 +104,57 @@ pm2 stop aria            # Stop
 
 ### Mode Priority System
 When a message arrives, Aria checks modes in priority order:
-1. **DND (Do Not Disturb):** If active, responds with DND prompt once per contact
-2. **Sleep Mode (20:00-08:00):** If active, responds with sleep prompt once per contact
-3. **Auto-Assist:** If enabled globally AND per-contact, AI responds normally
-4. **Otherwise:** Silent (only classifies as recado, no response)
+1. **DND (Do Not Disturb):** If active, one greeting per contact until DND is turned off
+2. **Sleep Mode (20:00–08:00 in `settings.timezone`):** If active and in hours, one greeting per contact
+3. **Auto-Assist:** If `settings.autoAssist.globalEnabled` is on, AI continues the conversation (there is **no** per-contact autoAssist flag)
+4. **Otherwise:** Silent (still classifies recado; no WhatsApp reply)
+
+Logic lives in `be/app/lib/incoming.js` (`resolvePresence`, `decideTurn`).
 
 ### WhatsApp Integration
 - **VenomBot Library:** Custom fork in `be/src/` (TypeScript). Compile with `npm run build`
 - **Session Storage:** Tokens stored in `be/tokens/` (auto-generated after QR scan)
 - **QR Generation:** QR code generated in `whatsapp.service.js`, displayed in "Estado" tab
-- **Media Handling:** Files sent via temporary files (see `whatsapp.service.sendFileBase64`)
+- **Media Handling:** Incoming visuals saved under `be/media/` and served at `GET /api/media/:id`. Outgoing files via `whatsapp.service.sendFileBase64`. Do not store Base64 in Mongo.
 
-### LLM Integration (Groq)
-- **Service:** `be/app/services/llm.service.js`
-- **Models:** Supports Groq models (qwen/qwen3-32b, llama3, deepseek) + custom OpenAI-compatible providers
-- **Features:** 
-  - Chat responses with conversation history
-  - Recado classification with priority (alta/media/baja)
-  - Content moderation (inappropriate content detection)
-  - Voice transcription (Whisper)
-- **Configuration:** API key and model stored in MongoDB Settings, seeded from .env
+### LLM Integration (OpenAI-compatible)
+- **Service:** `be/app/services/llm.service.js` (`openai` package, Chat Completions)
+- **Default base URL:** `https://api.groq.com/openai/v1` when `baseUrl` is empty
+- **Other presets:** OpenAI, OpenRouter, xAI, or any `/v1` clone (Estado tab)
+- **When Aria replies:** one combined turn (recado + content filter + reply + completed). Silence path: classify recado only. Rate limit 8 chats/min/contact.
+- **Voice:** `POST /v1/audio/transcriptions` (Whisper). Not all providers implement it.
+- **Configuration:** key/model/baseUrl/voiceModel in MongoDB `settings.groq` (historical field name), seeded from `.env`
 
 ### Database Models
-- **Contact:** `{ contactId, number, name, autoAssist, timestamps }`
-- **Message:** `{ contactId, contactName, role: "user"|"assistant", content, via: "auto"|"manual", timestamps }`
-- **Recado:** `{ contactId, contactName, content, priority: "alta"|"media"|"baja", read, timestamps }`
-- **Settings:** Singleton with DND, sleep, autoAssist, identity, groq, retention configs
-- **ServiceAudit:** Health check results for Groq/MongoDB/WhatsApp
+- **Contact:** `{ contactId, number, name, avatarUrl, timestamps }` — **no** `autoAssist`
+- **Message:** `{ contactId, contactName, role, content, via, isTranscribed, mediaPath, mediaType, aiClassification, timestamps }`. Legacy `mediaData` Base64 may still exist; `/api/media/:id` migrates it to disk.
+- **Recado:** `{ contactId, contactName, content, originalContent, priority: "alta"|"media"|"baja", read, timestamps }`
+- **Settings:** Singleton: DND, sleep, autoAssist.globalEnabled, identity, groq (OpenAI-compat blob), retention, timezone
+- **ServiceAudit:** Health checks for IA (`service: "groq"`), MongoDB, WhatsApp
+
+LLM conversation history is a RAM Map hydrated from Mongo on process start (`contact.service.ensureSession`). Idle > 20 min resets the thread. Dashboard history is always Mongo.
 
 ### Frontend Architecture
 - **Tab Navigation:** 4 tabs (Conversaciones, Contacts, Settings, Estado)
 - **API Client:** Fetch wrappers in `fe/src/api/`
 - **State Management:** React useState per component (no global state)
 - **Styling:** Tailwind CSS with custom design system (CSS variables in `fe/src/index.css`)
-- **Real-time:** Polling for WhatsApp status and QR code
+- **Real-time:** Conversaciones poll every 5s; Estado (WhatsApp/QR) every 4s
 
 ## Environment Variables
 
-Required in `be/.env`:
+Required in `be/.env` (see `be/.env.example`). `GROQ_*` still works as alias:
 ```env
-GROQ_API_KEY=your_groq_api_key_here   # https://console.groq.com/keys
-GROQ_MODEL=qwen/qwen3-32b
-MONGODB_URI=mongodb://localhost:27017/aria  # or Atlas connection string
+LLM_API_KEY=your_api_key_here
+LLM_MODEL=qwen/qwen3-32b
+LLM_BASE_URL=                         # empty = Groq OpenAI-compat URL
+LLM_VOICE_MODEL=whisper-large-v3-turbo
+MONGODB_URI=mongodb://localhost:27017/aria
 PORT=3000
 NODE_ENV=development
+ARIA_API_TOKEN=          # X-Aria-Token; en prod nginx lo inyecta. openssl rand -hex 24
+LISTEN_HOST=             # production default 127.0.0.1
+CORS_ORIGIN=             # vacío = same-origin
 VENOM_SESSION=aria
 VENOM_BROWSER=chrome   # chrome | edge | chromium
 ```
@@ -161,8 +172,9 @@ VENOM_BROWSER=chrome   # chrome | edge | chromium
 - `PATCH /api/settings/dnd` - Update DND mode
 - `PATCH /api/settings/sleep` - Update sleep mode
 - `PATCH /api/settings/auto-assist` - Toggle global auto-assist
-- `PATCH /api/settings/groq` - Update Groq API key/model
-- `GET /api/settings/groq/models` - List available Groq models
+- `PATCH /api/settings/groq` - Update OpenAI-compat key/model/baseUrl/voice (Mongo field still named `groq`)
+- `GET /api/settings/groq/models` - List chat models (`GET /v1/models`)
+- `GET /api/media/:id` - Serve a message image (disk or legacy Base64)
 
 ### WhatsApp & Status
 - `GET /api/whatsapp/status` - Get connection status and QR code
@@ -173,7 +185,7 @@ VENOM_BROWSER=chrome   # chrome | edge | chromium
 ## Important Implementation Details
 
 ### WhatsApp Session Management
-- Session tokens stored in `be/tokens/aria-session/` (auto-generated)
+- Session tokens stored in `be/tokens/` (gitignored; auto-generated)
 - QR code needed only on first connect or after manual restart
 - Multi-device support: host ID captured to prevent self-response loops
 
@@ -182,14 +194,14 @@ VENOM_BROWSER=chrome   # chrome | edge | chromium
 - For Atlas in some networks: Use direct connection (`mongodb://`) instead of SRV (`mongodb+srv://`)
 
 ### Scheduled Tasks
-- **Service Health Check:** Every 24 hours (audits Groq, MongoDB, WhatsApp)
-- **Data Retention:** Every 12 hours (deletes messages older than `settings.retention.days`)
+- **Service Health Check:** Every 24 hours (audits LLM, MongoDB, WhatsApp)
+- **Data Retention:** Every 12 hours (deletes recados/messages older than `settings.retention.days` and files in `be/media/`)
 - Both schedulers defined in `be/bot/index.js`
 
 ### Voice Message Handling
-- Voice messages transcribed using Whisper (Groq)
-- Transcription stored as text in Message model
-- Audio not persisted (transcription only)
+- Voice messages transcribed via `/v1/audio/transcriptions` (Whisper-compatible)
+- Transcription stored as text in Message; audio is not kept
+- If the provider has no transcriptions endpoint, the message is stored as a generic audio label
 
 ## Development Workflow
 
@@ -207,7 +219,8 @@ VENOM_BROWSER=chrome   # chrome | edge | chromium
    - VenomBot library: Edit `be/src/`, then run `npm run build` to recompile
 
 3. **Testing changes:**
-   - Send messages to the WhatsApp bot
+   - `cd be && npm test` for unit tests (incoming, modes, LLM parse, media paths, session)
+   - Send messages to the WhatsApp bot for end-to-end
    - Check logs: `pm2 logs aria` (production) or console (development)
    - Use "Estado" tab to verify service health
 
@@ -218,7 +231,7 @@ Services in `be/app/services/` are pure business logic modules:
 - Export functions, not classes
 - Use async/await for database/LLM calls
 - Handle errors gracefully (return defaults, don't crash)
-- Cache in-memory where appropriate (e.g., contact conversation history)
+- Cache in-memory where appropriate (LLM session Map, hydrated from Mongo)
 
 ### Controller Pattern
 Controllers in `be/app/controllers/` handle HTTP concerns:
@@ -235,7 +248,7 @@ Controllers in `be/app/controllers/` handle HTTP concerns:
 
 ## Deployment Notes
 
-- **nginx:** Serves frontend static files, proxies `/api` to backend
+- **nginx:** Serves frontend, Basic Auth on the whole site, proxies `/api` to Express on 127.0.0.1 (injects `X-Aria-Token`)
 - **PM2:** Keeps bot running 24/7, auto-restart on crash
 - **Let's Encrypt:** HTTPS via Certbot (see `DEPLOY.md`)
 - **Chromium:** Auto-downloaded during `npm install`, requires ~500MB space
@@ -244,7 +257,7 @@ Controllers in `be/app/controllers/` handle HTTP concerns:
 ## Troubleshooting
 
 - **WhatsApp not connecting:** Check `be/tokens/` permissions, ensure Chromium dependencies installed
-- **Groq API errors:** Verify API key in MongoDB Settings, check service status in "Estado" tab
+- **LLM API errors:** Verify key/base URL in Estado, check service status there. Empty base URL = Groq.
 - **MongoDB connection errors:** Check IP whitelist in Atlas, try direct connection format
 - **Frontend build errors:** Clear `fe/node_modules` and reinstall
 - **Backend build errors:** Clear `be/dist/` and run `npm run build` again

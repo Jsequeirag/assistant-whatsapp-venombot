@@ -6,7 +6,7 @@
 [![MongoDB](https://img.shields.io/badge/MongoDB-Atlas-47A248?logo=mongodb&logoColor=white)](https://www.mongodb.com/atlas)
 [![Groq](https://img.shields.io/badge/LLM-Groq-F55036?logo=groq)](https://groq.com)
 
-> **24/7 AI-powered WhatsApp personal assistant** with a web dashboard. Connects to your WhatsApp via QR code, auto-responds using Groq LLM (Qwen, Llama, DeepSeek), classifies incoming messages as tasks with priority levels, transcribes voice notes via Whisper, and features DND/Sleep modes — all manageable from a React dashboard.
+> **24/7 AI-powered WhatsApp personal assistant** with a web dashboard. Connects to your WhatsApp via QR code, auto-responds using an OpenAI-compatible LLM (Groq by default: Qwen, Llama, DeepSeek), classifies incoming messages as recados with priority levels, transcribes voice notes via Whisper, and features DND/Sleep modes — all manageable from a React dashboard (`fe/`).
 
 ---
 
@@ -14,14 +14,14 @@
 
 | Category | Capabilities |
 |---|---|
-| 🧠 **AI Responses** | Auto-reply using Groq LLM · Configurable model & temperature · OpenAI-compatible providers |
-| 📋 **Task Classification** | Detects "Recados" (tasks/notes) · Priority levels: High / Medium / Low |
-| 🎙 **Voice Transcription** | Whisper-powered audio-to-text for voice messages |
+| 🧠 **AI Responses** | Auto-reply via OpenAI-compatible Chat Completions · Groq default · OpenAI / OpenRouter / xAI presets |
+| 📋 **Task Classification** | Detects "Recados" · Priority: alta / media / baja |
+| 🎙 **Voice Transcription** | Whisper (`/v1/audio/transcriptions`) when the provider supports it |
 | 📱 **WhatsApp Integration** | QR pairing · Real-time messages · Send text, images & files |
-| 🌙 **Operational Modes** | DND · Sleep · Auto-Assist (global or per-contact) |
-| 📊 **Web Dashboard** | Conversations · Contacts · Settings · System status |
-| 🗄 **Persistence** | MongoDB for history · Configurable data retention (auto-purge) |
-| 🔍 **Service Health** | Audit logs · Groq latency checks · MongoDB connectivity |
+| 🌙 **Operational Modes** | DND · Sleep (20:00–08:00) · Auto-Assist **global** (no per-contact flag) |
+| 📊 **Web Dashboard** | Conversaciones · Contactos · Configuración · Estado (`fe/`) |
+| 🗄 **Persistence** | MongoDB for history · Images on disk (`be/media/`) · Configurable retention |
+| 🔍 **Service Health** | Audit logs · LLM latency · MongoDB · WhatsApp |
 
 ---
 
@@ -31,7 +31,7 @@
 |---|---|
 | **Backend** | Node.js 20+, Express 5, TypeScript |
 | **WhatsApp** | VenomBot, Puppeteer 24 (Chromium) |
-| **AI / LLM** | Groq SDK (Qwen3, Llama3, DeepSeek), Whisper |
+| **AI / LLM** | `openai` SDK (Chat Completions). Default Groq; any `/v1` provider |
 | **Database** | MongoDB Atlas, Mongoose 9 |
 | **Frontend** | React 18, Vite 5, Tailwind CSS 3, Lucide |
 | **Deployment** | PM2, nginx, Let's Encrypt (VPS / DigitalOcean) |
@@ -42,7 +42,7 @@
 
 - Node.js ≥ 20
 - MongoDB (local or [Atlas free tier](https://www.mongodb.com/atlas))
-- Groq API key — free at [console.groq.com](https://console.groq.com)
+- LLM API key (Groq by default — [console.groq.com](https://console.groq.com); or OpenAI / OpenRouter / xAI)
 - ~700 MB disk space (Chromium auto-downloaded on `npm install`)
 - Linux VPS recommended for 24/7 uptime (Ubuntu 22.04+)
 
@@ -91,12 +91,14 @@ Open your browser at `http://localhost:5173` and scan the QR code shown in the *
 Create `be/.env` from the example and fill in your values:
 
 ```env
-# Required
-GROQ_API_KEY=gsk_xxxxxxxxxxxxxxxxxxxx
-GROQ_MODEL=qwen/qwen3-32b
+# Required (GROQ_API_KEY / GROQ_MODEL still work as aliases)
+LLM_API_KEY=gsk_xxxxxxxxxxxxxxxxxxxx
+LLM_MODEL=qwen/qwen3-32b
 MONGODB_URI=mongodb+srv://user:pass@cluster.mongodb.net/aria
 
 # Optional
+LLM_BASE_URL=              # empty = https://api.groq.com/openai/v1
+LLM_VOICE_MODEL=whisper-large-v3-turbo
 PORT=3000
 NODE_ENV=development
 VENOM_SESSION=aria
@@ -111,10 +113,9 @@ All other settings (assistant name, DND message, retention days, custom LLM prov
 | Tab | Purpose |
 |---|---|
 | **Conversaciones** | View message threads per contact, send replies or files |
-| **Contactos** | Manage contacts, toggle per-contact auto-assist |
-| **Configuración** | Set Groq key/model, modes (DND/Sleep/Auto-Assist), identity, retention |
-| **Estado** | WhatsApp connection status, QR code, service health checks |
-
+| **Contactos** | Manage contacts (name / number). Auto-assist is global, in Configuración |
+| **Configuración** | Modes (DND/Sleep/Auto-Assist global), identity, retention |
+| **Estado** | WhatsApp QR, LLM provider (OpenAI-compat presets), service health |
 ---
 
 ## 🚢 Production Deployment (VPS)
