@@ -15,7 +15,7 @@ router.patch("/recados/:id/read", recados.markRead);
 router.get("/settings", settings.get);
 router.patch("/settings/dnd", settings.updateDnd);
 router.patch("/settings/sleep", settings.updateSleep);
-router.patch("/settings/auto-assist", settings.updateAutoAssist)
+router.patch("/settings/auto-assist", settings.updateAutoAssist);
 router.patch("/settings/identity", settings.updateIdentity);
 router.patch("/settings/groq", settings.updateGroq);
 router.get("/settings/groq/models", settings.listGroqModels);

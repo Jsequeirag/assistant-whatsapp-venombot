@@ -10,26 +10,22 @@ const SERVICE_LABELS = {
 function StatusDot({ status }) {
   return (
     <span
-      className={`inline-block h-2 w-2 shrink-0 ${status === "ok" ? "animate-online" : ""}`}
-      style={{ background: status === "ok" ? "#e8e8e8" : "#333" }}
+      className={status === "ok" ? "ds-status-dot-animated" : "ds-status-dot-static"}
     />
   );
 }
 
 const WA_BADGE = {
-  connected: { label: "Conectada", color: "#e8e8e8", border: "#e8e8e8" },
-  qr: { label: "Esperando QR", color: "#aaa", border: "#aaa" },
-  starting: { label: "Iniciando", color: "#555", border: "#555" },
-  disconnected: { label: "Desconectada", color: "#333", border: "#333" },
+  connected: { label: "Conectada", cls: "ds-wa-badge connected" },
+  qr: { label: "Esperando QR", cls: "ds-wa-badge qr" },
+  starting: { label: "Iniciando", cls: "ds-wa-badge starting" },
+  disconnected: { label: "Desconectada", cls: "ds-wa-badge disconnected" },
 };
 
 function WaBadge({ state }) {
   const b = WA_BADGE[state] || WA_BADGE.disconnected;
   return (
-    <span
-      className="font-mono text-[9px] uppercase tracking-widest px-2 py-0.5 border"
-      style={{ color: b.color, borderColor: b.border }}
-    >
+    <span className={b.cls}>
       {b.label}
     </span>
   );
@@ -37,9 +33,11 @@ function WaBadge({ state }) {
 
 function Card({ title, children, actions }) {
   return (
-    <div className="border border-[#2a2a2a] bg-[#0f0f0f] p-5 space-y-4">
-      <div className="flex items-center justify-between">
-        <h2 className="font-mono text-[11px] uppercase tracking-widest text-[#aaa]">{title}</h2>
+    <div className="ds-card-aria">
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "var(--ds-space-4)" }}>
+        <h2 style={{ fontFamily: "var(--ds-font-display)", fontWeight: "var(--ds-fw-display)", textTransform: "uppercase", letterSpacing: "1px", color: "var(--ds-text-muted)", fontSize: "var(--ds-fs-sm)" }}>
+          {title}
+        </h2>
         {actions}
       </div>
       {children}
@@ -135,14 +133,14 @@ export default function Estado() {
   };
 
   if (loading) return (
-    <p className="font-mono text-center text-[#555] py-12 text-[11px] uppercase tracking-wider">
+    <p style={{ textAlign: "center", color: "var(--ds-text-faint)", padding: "var(--ds-space-12) 0", fontFamily: "var(--ds-font-body)", fontWeight: "var(--ds-fw-regular)", fontSize: "var(--ds-fs-xs)", letterSpacing: "var(--ds-ls-caps)", textTransform: "uppercase" }}>
       Cargando...
     </p>
   );
 
   return (
-    <div className="space-y-3">
-      <h1 className="font-mono text-[11px] uppercase tracking-widest text-[#e8e8e8] mb-5">
+    <div style={{ display: "flex", flexDirection: "column", gap: "var(--ds-space-3)" }}>
+      <h1 className="ds-display" style={{ fontSize: "var(--ds-fs-sm)", color: "var(--ds-text-strong)", marginBottom: "var(--ds-space-4)" }}>
         Estado de servicios
       </h1>
 
@@ -152,32 +150,47 @@ export default function Estado() {
         actions={<WaBadge state={wa.state} />}
       >
         {wa.state === "qr" && wa.qr && (
-          <div className="flex flex-col items-center gap-3 py-2">
-            <div className="border border-[#2a2a2a] p-2 bg-white">
-              <img src={wa.qr} alt="QR de WhatsApp" className="w-52 h-52" />
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "var(--ds-space-3)", padding: "var(--ds-space-2) 0" }}>
+            <div style={{ border: "1px solid var(--ds-border)", padding: "var(--ds-space-2)", background: "#fff" }}>
+              <img src={wa.qr} alt="QR de WhatsApp" style={{ width: "208px", height: "208px" }} />
             </div>
-            <p className="font-mono text-[9px] text-[#555] text-center leading-relaxed uppercase tracking-wider">
+            <p style={{ fontFamily: "var(--ds-font-body)", fontWeight: "var(--ds-fw-regular)", fontSize: "var(--ds-fs-xs)", letterSpacing: "var(--ds-ls-caps)", textTransform: "uppercase", color: "var(--ds-text-faint)", textAlign: "center", lineHeight: 1.6 }}>
               WhatsApp → Dispositivos vinculados → Vincular dispositivo → escanear
             </p>
           </div>
         )}
 
         {wa.state === "connected" && (
-          <p className="text-[13px] text-[#aaa]">Conectada y escuchando mensajes.</p>
+          <p style={{ fontSize: "var(--ds-fs-sm)", color: "var(--ds-text-muted)" }}>Conectada y escuchando mensajes.</p>
         )}
 
         {(wa.state === "starting" || (wa.state === "qr" && !wa.qr)) && (
-          <p className="font-mono text-[11px] text-[#555] uppercase tracking-wider">Generando QR...</p>
+          <p style={{ fontFamily: "var(--ds-font-body)", fontWeight: "var(--ds-fw-regular)", fontSize: "var(--ds-fs-xs)", letterSpacing: "var(--ds-ls-caps)", textTransform: "uppercase", color: "var(--ds-text-faint)" }}>Generando QR...</p>
         )}
 
         {wa.state === "disconnected" && (
-          <p className="font-mono text-[11px] text-[#555] uppercase tracking-wider">Desconectada.</p>
+          <p style={{ fontFamily: "var(--ds-font-body)", fontWeight: "var(--ds-fw-regular)", fontSize: "var(--ds-fs-xs)", letterSpacing: "var(--ds-ls-caps)", textTransform: "uppercase", color: "var(--ds-text-faint)" }}>Desconectada.</p>
         )}
 
         <button
           onClick={restartWa}
           disabled={restarting}
-          className="font-mono text-[10px] uppercase tracking-wider px-4 py-2 border border-[#2a2a2a] text-[#aaa] hover:border-[#333] hover:text-[#e8e8e8] transition-colors disabled:opacity-30"
+          style={{
+            fontFamily: "var(--ds-font-body)",
+            fontWeight: "var(--ds-fw-medium)",
+            fontSize: "var(--ds-fs-xs)",
+            letterSpacing: "var(--ds-ls-caps)",
+            textTransform: "uppercase",
+            padding: "var(--ds-space-2) var(--ds-space-4)",
+            border: "1px solid var(--ds-border-soft)",
+            background: "transparent",
+            color: "var(--ds-text-muted)",
+            cursor: "pointer",
+            opacity: restarting ? 0.3 : 1,
+            transition: "color var(--ds-dur-hover), border-color var(--ds-dur-hover)",
+          }}
+          onMouseEnter={(e) => { if (!restarting) { e.currentTarget.style.borderColor = "var(--ds-border)"; e.currentTarget.style.color = "var(--ds-text-strong)"; } }}
+          onMouseLeave={(e) => { if (!restarting) { e.currentTarget.style.borderColor = "var(--ds-border-soft)"; e.currentTarget.style.color = "var(--ds-text-muted)"; } }}
         >
           {restarting ? "Reiniciando..." : "Generar nueva sesión"}
         </button>
@@ -186,20 +199,20 @@ export default function Estado() {
       {/* Servicios */}
       <Card title="Servicios">
         {current.length === 0 ? (
-          <p className="font-mono text-[10px] text-[#555] uppercase tracking-wider">
+          <p style={{ fontFamily: "var(--ds-font-body)", fontWeight: "var(--ds-fw-regular)", fontSize: "var(--ds-fs-xs)", letterSpacing: "var(--ds-ls-caps)", textTransform: "uppercase", color: "var(--ds-text-faint)" }}>
             Sin chequeos todavía.
           </p>
         ) : (
-          <ul className="space-y-2.5">
+          <ul style={{ display: "flex", flexDirection: "column", gap: "var(--ds-space-3)" }}>
             {current.map((s) => (
-              <li key={s.service} className="flex items-center justify-between">
-                <span className="flex items-center gap-2.5">
+              <li key={s.service} style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                <span style={{ display: "flex", alignItems: "center", gap: "var(--ds-space-3)" }}>
                   <StatusDot status={s.status} />
-                  <span className="font-mono text-[11px] text-[#aaa] uppercase tracking-wider">
+                  <span style={{ fontFamily: "var(--ds-font-body)", fontWeight: "var(--ds-fw-regular)", fontSize: "var(--ds-fs-xs)", letterSpacing: "var(--ds-ls-caps)", textTransform: "uppercase", color: "var(--ds-text-muted)" }}>
                     {SERVICE_LABELS[s.service] || s.service}
                   </span>
                 </span>
-                <span className="font-mono text-[9px] text-[#555]">
+                <span style={{ fontFamily: "var(--ds-font-body)", fontWeight: "var(--ds-fw-regular)", fontSize: "var(--ds-fs-xs)", color: "var(--ds-text-faint)" }}>
                   {s.latencyMs}ms · {new Date(s.checkedAt).toLocaleString("es")}
                 </span>
               </li>
@@ -209,7 +222,22 @@ export default function Estado() {
         <button
           onClick={check}
           disabled={checking}
-          className="font-mono text-[10px] uppercase tracking-wider px-4 py-2 bg-[#e8e8e8] text-[#0c0c0c] hover:bg-[#d0d0d0] transition-colors disabled:opacity-30"
+          className="ds-btn-primary"
+          style={{
+            fontFamily: "var(--ds-font-body)",
+            fontWeight: "var(--ds-fw-medium)",
+            fontSize: "var(--ds-fs-xs)",
+            letterSpacing: "var(--ds-ls-caps)",
+            textTransform: "uppercase",
+            padding: "var(--ds-space-2) var(--ds-space-4)",
+            background: "var(--ds-accent)",
+            color: "#fff",
+            border: "none",
+            cursor: "pointer",
+            opacity: checking ? 0.3 : 1,
+          }}
+          onMouseEnter={(e) => { if (!checking) e.currentTarget.style.opacity = 0.8; }}
+          onMouseLeave={(e) => { if (!checking) e.currentTarget.style.opacity = 1; }}
         >
           {checking ? "Verificando..." : "Verificar ahora"}
         </button>
@@ -219,10 +247,10 @@ export default function Estado() {
       <Card title="Proveedor de IA">
         {/* API Key */}
         <div>
-          <label className="block font-mono text-[9px] uppercase tracking-widest text-[#555] mb-1.5">
+          <label style={{ display: "block", fontFamily: "var(--ds-font-body)", fontWeight: "var(--ds-fw-regular)", fontSize: "var(--ds-fs-xs)", letterSpacing: "var(--ds-ls-label)", textTransform: "uppercase", color: "var(--ds-text-faint)", marginBottom: "var(--ds-space-2)" }}>
             API Key
             {groq.hasKey && (
-              <span className="text-[#333] ml-2">( actual: {groq.keyMasked} )</span>
+              <span style={{ color: "var(--ds-border)", marginLeft: "var(--ds-space-2)" }}>( actual: {groq.keyMasked} )</span>
             )}
           </label>
           <div className="t-input">
@@ -238,7 +266,7 @@ export default function Estado() {
 
         {/* URL base */}
         <div>
-          <label className="block font-mono text-[9px] uppercase tracking-widest text-[#555] mb-1.5">
+          <label style={{ display: "block", fontFamily: "var(--ds-font-body)", fontWeight: "var(--ds-fw-regular)", fontSize: "var(--ds-fs-xs)", letterSpacing: "var(--ds-ls-label)", textTransform: "uppercase", color: "var(--ds-text-faint)", marginBottom: "var(--ds-space-2)" }}>
             URL base del proveedor
           </label>
           <div className="t-input">
@@ -249,14 +277,14 @@ export default function Estado() {
               placeholder="vacío = Groq  ·  https://openrouter.ai/api/v1"
             />
           </div>
-          <p className="font-mono text-[9px] text-[#333] mt-1.5">
+          <p style={{ fontFamily: "var(--ds-font-body)", fontWeight: "var(--ds-fw-regular)", fontSize: "var(--ds-fs-xs)", color: "var(--ds-border)", marginTop: "var(--ds-space-2)" }}>
             Vacío → Groq (default) · OpenRouter → https://openrouter.ai/api/v1 · OpenAI → https://api.openai.com/v1
           </p>
         </div>
 
         {/* Modelo de chat */}
         <div>
-          <label className="block font-mono text-[9px] uppercase tracking-widest text-[#555] mb-1.5">
+          <label style={{ display: "block", fontFamily: "var(--ds-font-body)", fontWeight: "var(--ds-fw-regular)", fontSize: "var(--ds-fs-xs)", letterSpacing: "var(--ds-ls-label)", textTransform: "uppercase", color: "var(--ds-text-faint)", marginBottom: "var(--ds-space-2)" }}>
             Modelo de chat
           </label>
           {models.length > 0 ? (
@@ -281,7 +309,7 @@ export default function Estado() {
             </div>
           )}
           {models.length === 0 && (
-            <p className="font-mono text-[9px] text-[#555] mt-1.5">
+            <p style={{ fontFamily: "var(--ds-font-body)", fontWeight: "var(--ds-fw-regular)", fontSize: "var(--ds-fs-xs)", color: "var(--ds-text-faint)", marginTop: "var(--ds-space-2)" }}>
               Guardá una key válida para cargar la lista de modelos disponibles.
             </p>
           )}
@@ -289,7 +317,7 @@ export default function Estado() {
 
         {/* Modelo de voz */}
         <div>
-          <label className="block font-mono text-[9px] uppercase tracking-widest text-[#555] mb-1.5">
+          <label style={{ display: "block", fontFamily: "var(--ds-font-body)", fontWeight: "var(--ds-fw-regular)", fontSize: "var(--ds-fs-xs)", letterSpacing: "var(--ds-ls-label)", textTransform: "uppercase", color: "var(--ds-text-faint)", marginBottom: "var(--ds-space-2)" }}>
             Modelo de transcripción de voz
           </label>
           <div className="t-input">
@@ -300,27 +328,56 @@ export default function Estado() {
               placeholder="whisper-large-v3-turbo"
             />
           </div>
-          <p className="font-mono text-[9px] text-[#333] mt-1.5">
+          <p style={{ fontFamily: "var(--ds-font-body)", fontWeight: "var(--ds-fw-regular)", fontSize: "var(--ds-fs-xs)", color: "var(--ds-border)", marginTop: "var(--ds-space-2)" }}>
             Solo aplica cuando el proveedor soporta /audio/transcriptions (Groq, OpenAI).
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div style={{ display: "flex", alignItems: "center", gap: "var(--ds-space-2)" }}>
           <button
             onClick={saveGroq}
-            className="font-mono text-[10px] uppercase tracking-wider px-4 py-2 bg-[#e8e8e8] text-[#0c0c0c] hover:bg-[#d0d0d0] transition-colors"
+            className="ds-btn-primary"
+            style={{
+              fontFamily: "var(--ds-font-body)",
+              fontWeight: "var(--ds-fw-medium)",
+              fontSize: "var(--ds-fs-xs)",
+              letterSpacing: "var(--ds-ls-caps)",
+              textTransform: "uppercase",
+              padding: "var(--ds-space-2) var(--ds-space-4)",
+              background: "var(--ds-accent)",
+              color: "#fff",
+              border: "none",
+              cursor: "pointer",
+            }}
+            onMouseEnter={(e) => e.currentTarget.style.opacity = 0.8}
+            onMouseLeave={(e) => e.currentTarget.style.opacity = 1}
           >
             Guardar
           </button>
           <button
             onClick={check}
             disabled={checking}
-            className="font-mono text-[10px] uppercase tracking-wider px-4 py-2 border border-[#2a2a2a] text-[#aaa] hover:border-[#333] hover:text-[#e8e8e8] transition-colors disabled:opacity-30"
+            style={{
+              fontFamily: "var(--ds-font-body)",
+              fontWeight: "var(--ds-fw-medium)",
+              fontSize: "var(--ds-fs-xs)",
+              letterSpacing: "var(--ds-ls-caps)",
+              textTransform: "uppercase",
+              padding: "var(--ds-space-2) var(--ds-space-4)",
+              border: "1px solid var(--ds-border-soft)",
+              background: "transparent",
+              color: "var(--ds-text-muted)",
+              cursor: "pointer",
+              opacity: checking ? 0.3 : 1,
+              transition: "color var(--ds-dur-hover), border-color var(--ds-dur-hover)",
+            }}
+            onMouseEnter={(e) => { if (!checking) { e.currentTarget.style.borderColor = "var(--ds-border)"; e.currentTarget.style.color = "var(--ds-text-strong)"; } }}
+            onMouseLeave={(e) => { if (!checking) { e.currentTarget.style.borderColor = "var(--ds-border-soft)"; e.currentTarget.style.color = "var(--ds-text-muted)"; } }}
           >
             {checking ? "Verificando..." : "Verificar"}
           </button>
           {savedMsg && (
-            <span className="font-mono text-[9px] uppercase tracking-wider text-[#aaa]">{savedMsg}</span>
+            <span style={{ fontFamily: "var(--ds-font-body)", fontWeight: "var(--ds-fw-regular)", fontSize: "var(--ds-fs-xs)", letterSpacing: "var(--ds-ls-caps)", textTransform: "uppercase", color: "var(--ds-text-muted)" }}>{savedMsg}</span>
           )}
         </div>
       </Card>

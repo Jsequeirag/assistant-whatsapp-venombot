@@ -1,48 +1,28 @@
-@import url('https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400&family=Space+Grotesk:wght@300;400;500&display=swap');
-
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
-
-/* ── Reset global ─────────────────────────────────────────────────────────── */
-* {
-  border-radius: 0 !important;
-  box-sizing: border-box;
-}
-
-/* ── Base dark surface ───────────────────────────────────────────────────── */
-html, body, #root {
-  background-color: #0a0a0a;
-  color: #e8e8e8;
-  font-family: 'Space Grotesk', system-ui, sans-serif;
-  font-size: 13px;
-  -webkit-font-smoothing: antialiased;
-}
+/* Design System tokens importados en main.jsx - Estilos específicos del proyecto Aria */
 
 /* ── Terminal input wrapper ──────────────────────────────────────────────── */
-/* Wrap <input> or <select> in a div.t-input for terminal prefix */
 .t-input {
   display: flex;
   align-items: center;
-  background: #0f0f0f;
-  border: 1.5px solid #2a2a2a;
+  background: var(--ds-surface);
+  border: 1.5px solid var(--ds-border);
   padding: 0 12px;
   gap: 8px;
 }
 .t-input::before {
   content: '>';
-  font-family: 'Space Mono', monospace;
-  color: #555;
-  font-size: 11px;
+  font-family: var(--ds-font-body);
+  color: var(--ds-text-faint);
+  font-size: var(--ds-fs-xs);
   flex-shrink: 0;
   line-height: 1;
   user-select: none;
 }
 .t-input:focus-within {
-  border-color: #333;
+  border-color: var(--ds-accent-55);
 }
 .t-input:focus-within::before {
-  color: #aaa;
+  color: var(--ds-text-muted);
 }
 .t-input input,
 .t-input select,
@@ -51,15 +31,16 @@ html, body, #root {
   background: transparent;
   border: none;
   outline: none;
-  color: #e8e8e8;
-  font-family: 'Space Grotesk', sans-serif;
-  font-size: 13px;
+  color: var(--ds-text);
+  font-family: var(--ds-font-body);
+  font-weight: var(--ds-fw-regular);
+  font-size: var(--ds-fs-sm);
   padding: 8px 0;
   min-width: 0;
 }
 .t-input input::placeholder,
 .t-input textarea::placeholder {
-  color: #555;
+  color: var(--ds-text-faint);
 }
 .t-input input[type="password"] {
   letter-spacing: 0.1em;
@@ -69,10 +50,9 @@ html, body, #root {
   appearance: none;
 }
 .t-input select option {
-  background: #0f0f0f;
-  color: #e8e8e8;
+  background: var(--ds-surface);
+  color: var(--ds-text);
 }
-/* Remove browser arrows on number input */
 .t-input input[type="number"]::-webkit-inner-spin-button,
 .t-input input[type="number"]::-webkit-outer-spin-button {
   -webkit-appearance: none;
@@ -81,13 +61,12 @@ html, body, #root {
   -moz-appearance: textfield;
 }
 
-/* ── Scrollbar mínimo ────────────────────────────────────────────────────── */
+/* ── Scrollbar ──────────────────────────────────────────────────────────────── */
 ::-webkit-scrollbar { width: 4px; height: 4px; }
-::-webkit-scrollbar-track { background: #0a0a0a; }
-::-webkit-scrollbar-thumb { background: #2a2a2a; }
-::-webkit-scrollbar-thumb:hover { background: #333; }
+::-webkit-scrollbar-track { background: var(--ds-bg); }
+::-webkit-scrollbar-thumb { background: var(--ds-accent); }
 
-/* ── Animaciones ─────────────────────────────────────────────────────────── */
+/* ── Animaciones personalizadas de Aria ───────────────────────────────────── */
 @keyframes pulse-opacity {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.25; }
@@ -103,3 +82,355 @@ html, body, #root {
 .typing-dot:nth-child(1) { animation: typing-dot 1.2s infinite 0s; }
 .typing-dot:nth-child(2) { animation: typing-dot 1.2s infinite 0.2s; }
 .typing-dot:nth-child(3) { animation: typing-dot 1.2s infinite 0.4s; }
+
+/* ── Botones personalizados ──────────────────────────────────────────────────── */
+.ds-btn-primary {
+  background: var(--ds-accent);
+  color: #fff;
+  font-family: var(--ds-font-display);
+  font-weight: 700;
+  font-size: var(--ds-fs-sm);
+  letter-spacing: var(--ds-ls-caps);
+  text-transform: uppercase;
+  padding: 12px 28px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  transition: opacity var(--ds-dur-hover);
+  cursor: pointer;
+  border: none;
+}
+.ds-btn-primary:hover { opacity: 0.8; }
+
+.ds-btn-secondary {
+  background: var(--ds-text-strong);
+  color: var(--ds-bg);
+  font-family: var(--ds-font-display);
+  font-weight: 700;
+  font-size: var(--ds-fs-sm);
+  letter-spacing: var(--ds-ls-caps);
+  text-transform: uppercase;
+  padding: 12px 28px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  transition: opacity var(--ds-dur-hover);
+  cursor: pointer;
+  border: none;
+}
+.ds-btn-secondary:hover { opacity: 0.8; }
+
+/* ── Toggle switch personalizado ──────────────────────────────────────────── */
+.ds-toggle {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  cursor: pointer;
+}
+.ds-toggle input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+.ds-toggle-track {
+  display: flex;
+  align-items: center;
+  width: 40px;
+  height: 20px;
+  background: transparent;
+  border: 1px solid var(--ds-border);
+  transition: background var(--ds-dur-hover), border-color var(--ds-dur-hover);
+}
+.ds-toggle-thumb {
+  width: 14px;
+  height: 14px;
+  background: var(--ds-text-faint);
+  transform: translateX(4px);
+  transition: transform var(--ds-dur-hover), background var(--ds-dur-hover);
+}
+.ds-toggle input:checked + .ds-toggle-track {
+  background: var(--ds-accent);
+  border-color: var(--ds-accent);
+}
+.ds-toggle input:checked + .ds-toggle-track .ds-toggle-thumb {
+  background: var(--ds-bg);
+  transform: translateX(20px);
+}
+
+/* ── Badge de prioridad ─────────────────────────────────────────────────────── */
+.ds-priority-badge {
+  font-family: var(--ds-font-body);
+  font-weight: var(--ds-fw-regular);
+  font-size: var(--ds-fs-xs);
+  letter-spacing: var(--ds-ls-caps);
+  text-transform: uppercase;
+  padding: 4px 8px;
+  border: 1px solid var(--ds-border-soft);
+  display: inline-block;
+}
+.ds-priority-badge.alta {
+  border-color: var(--ds-text-strong);
+  color: var(--ds-text-strong);
+}
+.ds-priority-badge.media {
+  border-color: var(--ds-text-muted);
+  color: var(--ds-text-muted);
+}
+.ds-priority-badge.baja {
+  border-color: var(--ds-text-faint);
+  color: var(--ds-text-faint);
+}
+
+/* ── Card personalizada para Settings/Estado ───────────────────────────────── */
+.ds-card-aria {
+  background: var(--ds-surface);
+  border: 1px solid var(--ds-border);
+  padding: var(--ds-space-6);
+  margin-bottom: var(--ds-space-3);
+}
+.ds-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--ds-space-4);
+}
+.ds-card-title {
+  font-family: var(--ds-font-display);
+  font-weight: var(--ds-fw-display);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--ds-text-muted);
+  font-size: var(--ds-fs-sm);
+}
+
+/* ── Avatar cuadrado (fallback) ──────────────────────────────────────────── */
+.ds-avatar {
+  width: 34px;
+  height: 34px;
+  background: var(--ds-surface);
+  border: 1px solid var(--ds-border);
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+.ds-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.ds-avatar-initial {
+  font-family: var(--ds-font-body);
+  font-weight: var(--ds-fw-regular);
+  font-size: var(--ds-fs-xs);
+  color: var(--ds-text-faint);
+  text-transform: uppercase;
+}
+
+/* ── Avatar circular estilo WhatsApp ─────────────────────────────────────── */
+.ds-avatar-circle {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: var(--ds-surface);
+  border: 1px solid var(--ds-border);
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+.ds-avatar-circle img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 50%;
+}
+.ds-avatar-circle.ds-avatar-initial {
+  background: linear-gradient(135deg, #3a3a5c 0%, #2a2a40 100%);
+  border-color: var(--ds-border);
+  color: var(--ds-text-muted);
+}
+
+/* ── Tab navigation ─────────────────────────────────────────────────────────── */
+.ds-tab-nav {
+  display: flex;
+  border-bottom: 1px solid var(--ds-border);
+}
+.ds-tab-btn {
+  font-family: var(--ds-font-body);
+  font-weight: var(--ds-fw-medium);
+  font-size: var(--ds-fs-xs);
+  letter-spacing: var(--ds-ls-caps);
+  text-transform: uppercase;
+  color: var(--ds-text-faint);
+  padding: var(--ds-space-3) var(--ds-space-4);
+  background: transparent;
+  border: none;
+  border-bottom: 3px solid transparent;
+  cursor: pointer;
+  transition: color var(--ds-dur-hover), border-color var(--ds-dur-hover);
+}
+.ds-tab-btn:hover {
+  color: var(--ds-text-muted);
+}
+.ds-tab-btn.active {
+  color: var(--ds-text-strong);
+  border-bottom-color: var(--ds-accent);
+}
+
+/* ── Conversación: burbujas de mensaje ───────────────────────────────────────── */
+.ds-msg-bubble {
+  max-width: 100%;
+  padding: var(--ds-space-3);
+  font-size: var(--ds-fs-sm);
+  white-space: pre-wrap;
+  word-break: break-words;
+  color: var(--ds-text);
+  background: var(--ds-surface);
+  border: 1.5px solid var(--ds-border);
+}
+.ds-msg-bubble.incoming {
+  border-left: 3px solid var(--ds-border);
+}
+.ds-msg-bubble.outgoing {
+  border-right: 3px solid var(--ds-accent);
+}
+.ds-msg-meta {
+  font-family: var(--ds-font-body);
+  font-size: var(--ds-fs-xs);
+  color: var(--ds-text-faint);
+  margin-top: var(--ds-space-2);
+}
+
+/* ── AI Chip ───────────────────────────────────────────────────────────────── */
+.ds-ai-chip {
+  margin-top: var(--ds-space-2);
+}
+.ds-ai-label {
+  font-family: var(--ds-font-body);
+  font-weight: var(--ds-fw-regular);
+  font-size: var(--ds-fs-xs);
+  letter-spacing: var(--ds-ls-caps);
+  text-transform: uppercase;
+  color: var(--ds-text-faint);
+}
+.ds-ai-content {
+  font-size: var(--ds-fs-xs);
+  color: var(--ds-text-faint);
+  font-style: italic;
+  line-height: 1.4;
+}
+
+/* ── Status dot animado ─────────────────────────────────────────────────────── */
+.ds-status-dot-animated {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--ds-success);
+  box-shadow: 0 0 8px rgba(34, 199, 122, 0.5);
+  animation: pulse-opacity 2s ease-in-out infinite;
+}
+.ds-status-dot-static {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--ds-text-faint);
+}
+
+/* ── Badge de estado WhatsApp ───────────────────────────────────────────────── */
+.ds-wa-badge {
+  font-family: var(--ds-font-body);
+  font-weight: var(--ds-fw-medium);
+  font-size: var(--ds-fs-xs);
+  letter-spacing: var(--ds-ls-label);
+  text-transform: uppercase;
+  padding: 4px 10px;
+  border: 1px solid var(--ds-border-soft);
+}
+.ds-wa-badge.connected {
+  color: var(--ds-success);
+  border-color: var(--ds-success);
+}
+.ds-wa-badge.qr {
+  color: var(--ds-text-muted);
+  border-color: var(--ds-text-muted);
+}
+.ds-wa-badge.starting {
+  color: var(--ds-text-faint);
+  border-color: var(--ds-text-faint);
+}
+.ds-wa-badge.disconnected {
+  color: var(--ds-text-faint);
+  border-color: var(--ds-border);
+}
+
+/* ── Layout: sticky header ───────────────────────────────────────────────────── */
+.ds-header-sticky {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: var(--ds-surface);
+  border-bottom: 1px solid var(--ds-border);
+}
+
+/* ── Main container ─────────────────────────────────────────────────────────── */
+.ds-main {
+  max-width: var(--ds-max-content);
+  margin: 0 auto;
+  padding: var(--ds-space-6) var(--ds-space-4);
+}
+
+/* ── Lista de conversaciones/contactos ────────────────────────────────────────── */
+.ds-list {
+  border: 1px solid var(--ds-border);
+  border-top: none;
+}
+.ds-list-item {
+  background: var(--ds-surface);
+  border-top: 1px solid var(--ds-border);
+  border-left: 3px solid transparent;
+  transition: background var(--ds-dur-hover);
+}
+.ds-list-item:hover {
+  background: var(--ds-bg);
+}
+.ds-list-item.active {
+  border-left-color: var(--ds-accent);
+}
+.ds-list-item-content {
+  display: flex;
+  align-items: center;
+  gap: var(--ds-space-3);
+  padding: var(--ds-space-3) var(--ds-space-4);
+  cursor: pointer;
+}
+
+/* ── Counter badge ──────────────────────────────────────────────────────────── */
+.ds-counter-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  font-family: var(--ds-font-body);
+  font-weight: var(--ds-fw-strong);
+  font-size: var(--ds-fs-xs);
+  color: var(--ds-bg);
+  background: var(--ds-accent);
+  border-radius: 2px;
+}
+
+/* ── Recado card ───────────────────────────────────────────────────────────── */
+.ds-recado-card {
+  background: var(--ds-surface);
+  border: 1px solid var(--ds-border);
+  border-left: 3px solid var(--ds-border);
+  padding: var(--ds-space-2) var(--ds-space-3);
+  margin-bottom: var(--ds-space-2);
+}
+.ds-recado-card.unread {
+  border-left-color: var(--ds-accent);
+}

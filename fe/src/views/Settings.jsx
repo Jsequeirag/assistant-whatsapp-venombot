@@ -4,33 +4,27 @@ import EmojiPicker from "../components/EmojiPicker";
 
 function Toggle({ checked, onChange, label }) {
   return (
-    <label className="flex items-center gap-3 cursor-pointer">
-      <button
-        type="button"
-        onClick={() => onChange(!checked)}
-        className="relative inline-flex h-5 w-10 items-center border transition-colors focus:outline-none"
-        style={{
-          background: checked ? "#e8e8e8" : "transparent",
-          borderColor: checked ? "#e8e8e8" : "#333",
-        }}
-      >
-        <span
-          className="inline-block h-3.5 w-3.5 transition-transform"
-          style={{
-            background: checked ? "#0c0c0c" : "#555",
-            transform: checked ? "translateX(20px)" : "translateX(4px)",
-          }}
-        />
-      </button>
-      <span className="font-mono text-[11px] uppercase tracking-wider text-[#aaa]">{label}</span>
+    <label className="ds-toggle" style={{ display: "flex", alignItems: "center", gap: "var(--ds-space-3)", cursor: "pointer" }}>
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={(e) => onChange(e.target.checked)}
+        style={{ position: "absolute", opacity: 0, pointerEvents: "none" }}
+      />
+      <div className="ds-toggle-track">
+        <div className="ds-toggle-thumb" />
+      </div>
+      <span style={{ fontFamily: "var(--ds-font-body)", fontWeight: "var(--ds-fw-medium)", fontSize: "var(--ds-fs-xs)", letterSpacing: "var(--ds-ls-caps)", textTransform: "uppercase", color: "var(--ds-text-muted)" }}>{label}</span>
     </label>
   );
 }
 
 function Card({ title, children }) {
   return (
-    <div className="border border-[#2a2a2a] bg-[#0f0f0f] p-5 space-y-4">
-      <h2 className="font-mono text-[11px] uppercase tracking-widest text-[#aaa]">{title}</h2>
+    <div className="ds-card-aria">
+      <h2 style={{ fontFamily: "var(--ds-font-display)", fontWeight: "var(--ds-fw-display)", textTransform: "uppercase", letterSpacing: "1px", color: "var(--ds-text-muted)", fontSize: "var(--ds-fs-sm)", marginBottom: "var(--ds-space-4)" }}>
+        {title}
+      </h2>
       {children}
     </div>
   );
@@ -39,9 +33,9 @@ function Card({ title, children }) {
 function Field({ label, hint, children }) {
   return (
     <div>
-      <label className="block font-mono text-[9px] uppercase tracking-widest text-[#555] mb-1.5">{label}</label>
+      <label style={{ display: "block", fontFamily: "var(--ds-font-body)", fontWeight: "var(--ds-fw-regular)", fontSize: "var(--ds-fs-xs)", letterSpacing: "var(--ds-ls-label)", textTransform: "uppercase", color: "var(--ds-text-faint)", marginBottom: "var(--ds-space-2)" }}>{label}</label>
       {children}
-      {hint && <p className="font-mono text-[9px] text-[#555] mt-1.5 leading-relaxed">{hint}</p>}
+      {hint && <p style={{ fontFamily: "var(--ds-font-body)", fontWeight: "var(--ds-fw-regular)", fontSize: "var(--ds-fs-xs)", color: "var(--ds-text-faint)", marginTop: "var(--ds-space-2)", lineHeight: 1.6 }}>{hint}</p>}
     </div>
   );
 }
@@ -51,7 +45,21 @@ function SaveButton({ onClick, saved }) {
     <button
       type="button"
       onClick={onClick}
-      className="font-mono text-[10px] uppercase tracking-wider px-4 py-2 bg-[#e8e8e8] text-[#0c0c0c] hover:bg-[#d0d0d0] transition-colors"
+      className="ds-btn-primary"
+      style={{
+        fontFamily: "var(--ds-font-body)",
+        fontWeight: "var(--ds-fw-medium)",
+        fontSize: "var(--ds-fs-xs)",
+        letterSpacing: "var(--ds-ls-caps)",
+        textTransform: "uppercase",
+        padding: "var(--ds-space-2) var(--ds-space-4)",
+        background: "var(--ds-accent)",
+        color: "#fff",
+        border: "none",
+        cursor: "pointer",
+      }}
+      onMouseEnter={(e) => e.currentTarget.style.opacity = 0.8}
+      onMouseLeave={(e) => e.currentTarget.style.opacity = 1}
     >
       {saved ? "✓ Guardado" : "Guardar"}
     </button>
@@ -90,7 +98,7 @@ export default function Settings() {
   const saveRetention = async () => { const r = await api.updateRetention(retention.days); setRetention(r); notify("retention"); };
 
   if (loading) return (
-    <p className="font-mono text-center text-[#555] py-12 text-[11px] uppercase tracking-wider">
+    <p style={{ textAlign: "center", color: "var(--ds-text-faint)", padding: "var(--ds-space-12) 0", fontFamily: "var(--ds-font-body)", fontWeight: "var(--ds-fw-regular)", fontSize: "var(--ds-fs-xs)", letterSpacing: "var(--ds-ls-caps)", textTransform: "uppercase" }}>
       Cargando...
     </p>
   );
@@ -98,8 +106,8 @@ export default function Settings() {
   const preview = `"Hola, soy ${identity.assistantName || "Ari"}, el asistente virtual de ${identity.ownerName || "el usuario"}."`;
 
   return (
-    <div className="space-y-3">
-      <h1 className="font-mono text-[11px] uppercase tracking-widest text-[#e8e8e8] mb-5">
+    <div style={{ display: "flex", flexDirection: "column", gap: "var(--ds-space-3)" }}>
+      <h1 className="ds-display" style={{ fontSize: "var(--ds-fs-sm)", color: "var(--ds-text-strong)", marginBottom: "var(--ds-space-4)" }}>
         Configuración
       </h1>
 
@@ -125,7 +133,7 @@ export default function Settings() {
             />
           </div>
         </Field>
-        <p className="font-mono text-[10px] text-[#555] italic">{preview}</p>
+        <p style={{ fontFamily: "var(--ds-font-body)", fontWeight: "var(--ds-fw-regular)", fontSize: "var(--ds-fs-xs)", color: "var(--ds-text-faint)", fontStyle: "italic" }}>{preview}</p>
         <SaveButton onClick={saveIdentity} saved={saved === "identity"} />
       </Card>
 
@@ -140,8 +148,8 @@ export default function Settings() {
           label="Motivo"
           hint="La IA adapta el mensaje según esto. Ej: 'en una reunión', 'almorzando', 'de viaje hasta el viernes'."
         >
-          <div className="flex items-start gap-2">
-            <div className="t-input flex-1">
+          <div style={{ display: "flex", alignItems: "flex-start", gap: "var(--ds-space-2)" }}>
+            <div className="t-input" style={{ flex: 1 }}>
               <input
                 type="text"
                 value={dnd.reason}
@@ -166,8 +174,8 @@ export default function Settings() {
           label="Motivo / contexto"
           hint="La IA adapta el mensaje según esto. Si está vacío, usará 'descansando'."
         >
-          <div className="flex items-start gap-2">
-            <div className="t-input flex-1">
+          <div style={{ display: "flex", alignItems: "flex-start", gap: "var(--ds-space-2)" }}>
+            <div className="t-input" style={{ flex: 1 }}>
               <input
                 type="text"
                 value={sleep.reason}
@@ -188,7 +196,7 @@ export default function Settings() {
           onChange={(v) => setAutoAssist({ ...autoAssist, globalEnabled: v })}
           label={autoAssist.globalEnabled ? "Global: activo" : "Global: inactivo"}
         />
-        <p className="font-mono text-[9px] text-[#555] leading-relaxed">
+        <p style={{ fontFamily: "var(--ds-font-body)", fontWeight: "var(--ds-fw-regular)", fontSize: "var(--ds-fs-xs)", color: "var(--ds-text-faint)", lineHeight: 1.6 }}>
           Cuando está activo, el bot sigue la conversación con todos los contactos.
         </p>
         <SaveButton onClick={saveAutoAssist} saved={saved === "autoAssist"} />
@@ -200,8 +208,8 @@ export default function Settings() {
           label="Días de retención"
           hint="Recados y mensajes más antiguos se eliminan automáticamente. 0 = nunca borrar."
         >
-          <div className="flex items-center gap-3">
-            <div className="t-input w-28">
+          <div style={{ display: "flex", alignItems: "center", gap: "var(--ds-space-3)" }}>
+            <div className="t-input" style={{ width: "112px" }}>
               <input
                 type="number"
                 min="0"
@@ -209,21 +217,30 @@ export default function Settings() {
                 onChange={(e) => setRetention({ days: e.target.value })}
               />
             </div>
-            <span className="font-mono text-[11px] text-[#555] uppercase tracking-wider">días</span>
+            <span style={{ fontFamily: "var(--ds-font-body)", fontWeight: "var(--ds-fw-regular)", fontSize: "var(--ds-fs-xs)", letterSpacing: "var(--ds-ls-caps)", textTransform: "uppercase", color: "var(--ds-text-faint)" }}>días</span>
           </div>
         </Field>
-        <div className="flex flex-wrap gap-1.5">
+        <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--ds-space-2)" }}>
           {[1, 2, 7, 30, 90].map((d) => (
             <button
               key={d}
               type="button"
               onClick={() => setRetention({ days: d })}
-              className="font-mono text-[9px] uppercase tracking-wider px-3 py-1 border transition-colors"
               style={{
-                borderColor: Number(retention.days) === d ? "#e8e8e8" : "#2a2a2a",
-                color: Number(retention.days) === d ? "#e8e8e8" : "#555",
-                background: Number(retention.days) === d ? "#131313" : "transparent",
+                fontFamily: "var(--ds-font-body)",
+                fontWeight: "var(--ds-fw-regular)",
+                fontSize: "var(--ds-fs-xs)",
+                letterSpacing: "var(--ds-ls-caps)",
+                textTransform: "uppercase",
+                padding: "var(--ds-space-1) var(--ds-space-3)",
+                border: "1px solid var(--ds-border-soft)",
+                background: Number(retention.days) === d ? "var(--ds-surface)" : "transparent",
+                color: Number(retention.days) === d ? "var(--ds-text-strong)" : "var(--ds-text-faint)",
+                cursor: "pointer",
+                transition: "color var(--ds-dur-hover), border-color var(--ds-dur-hover)",
               }}
+              onMouseEnter={(e) => { if (Number(retention.days) !== d) e.currentTarget.style.borderColor = "var(--ds-border)"; }}
+              onMouseLeave={(e) => { if (Number(retention.days) !== d) e.currentTarget.style.borderColor = "var(--ds-border-soft)"; }}
             >
               {d}d
             </button>

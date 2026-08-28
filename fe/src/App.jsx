@@ -1,7 +1,4 @@
 import { useState } from "react";
-import TetrisLogo from "./components/TetrisLogo";
-import TetrisFlow from "./components/TetrisFlow";
-import FaviconRotator from "./components/FaviconRotator";
 import Conversaciones from "./views/Conversaciones";
 import Contacts from "./views/Contacts";
 import Settings from "./views/Settings";
@@ -18,47 +15,109 @@ export default function App() {
   const [tab, setTab] = useState("conversaciones");
 
   return (
-    <div className="min-h-screen bg-[#0a0a0a]">
-      <FaviconRotator
-        icons={[
-          "/favicon-47.png",
-          "/favicon-51.png",
-          "/favicon-93.png",
-          "/favicon-98.png",
-          "/favicon-102.png",
-        ]}
-        interval={3000}
-      />
-      <header className="relative bg-[#0f0f0f] border-b border-[#1a1a1a] sticky top-0 z-10">
-        <TetrisFlow />
-        <div className="relative z-10 max-w-2xl mx-auto px-4">
-          <div className="flex items-stretch justify-between h-20">
-            <div className="flex items-center pr-6 self-center">
-              <TetrisLogo
-                size={64}
-                srcs={[
-                  "/logo-47.png",
-                  "/logo-51.png",
-                  "/logo-93.png",
-                  "/logo-98.png",
-                  "/logo-102.png",
-                ]}
-                interval={3000}
+    <div style={{ minHeight: "100vh", background: "var(--ds-bg)" }}>
+      {/* Header sticky con efecto de vidrio */}
+      <header
+        style={{
+          position: "sticky",
+          top: 0,
+          zIndex: 10,
+          background: "var(--ds-surface)",
+          borderBottom: "1px solid var(--ds-border)",
+        }}
+      >
+        {/* Header container */}
+        <div
+          style={{
+            position: "relative",
+            zIndex: 10,
+            maxWidth: "var(--ds-max-content)",
+            margin: "0 auto",
+            padding: "0 var(--ds-pad-section-x)",
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              alignItems: "stretch",
+              justifyContent: "space-between",
+              height: "var(--ds-space-20)",
+            }}
+          >
+            {/* Logo/Brand section */}
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "var(--ds-space-4)",
+              }}
+            >
+              {/* Logo image */}
+              <img
+                src="/assets/logo.png"
+                alt="Aria Logo"
+                style={{
+                  height: "48px",
+                  width: "auto",
+                  display: "block",
+                }}
+              />
+              {/* Brand name con tipografía display */}
+              <div
+                className="ds-display"
+                style={{
+                  fontSize: "clamp(28px, 4vw, 42px)",
+                  lineHeight: "var(--ds-lh-hero)",
+                  letterSpacing: "3px",
+                  color: "var(--ds-text-strong)",
+                }}
+              >
+                ARIA
+              </div>
+              {/* Accent bar - firma del design system */}
+              <div
+                style={{
+                  width: "var(--ds-bar-thin)",
+                  height: "var(--ds-space-8)",
+                  background: "var(--ds-accent)",
+                }}
               />
             </div>
-            <nav className="flex items-stretch">
+
+            {/* Navigation tabs */}
+            <nav className="ds-tab-nav" style={{ border: "none", flex: 1, marginLeft: "var(--ds-space-12)" }}>
               {TABS.map((t) => (
                 <button
                   key={t.id}
                   onClick={() => setTab(t.id)}
-                  className="px-4 font-mono text-[10px] uppercase tracking-wider transition-colors"
+                  className="ds-tab-btn"
                   style={{
-                    color: tab === t.id ? "#e8e8e8" : "#555",
-                    borderBottom: tab === t.id ? "3px solid #e8e8e8" : "3px solid transparent",
-                    background: tab === t.id ? "#131313" : "transparent",
+                    fontFamily: "var(--ds-font-body)",
+                    fontWeight: tab === t.id ? "var(--ds-fw-medium)" : "var(--ds-fw-regular)",
+                    fontSize: "var(--ds-fs-sm)",
+                    letterSpacing: "var(--ds-ls-caps)",
+                    textTransform: "uppercase",
+                    color: tab === t.id ? "var(--ds-accent)" : "var(--ds-text-faint)",
+                    borderBottom: tab === t.id ? "3px solid var(--ds-accent)" : "3px solid transparent",
+                    background: "transparent",
+                    padding: "0 var(--ds-space-4)",
+                    transition: "color var(--ds-dur-hover), border-color var(--ds-dur-hover)",
+                    cursor: "pointer",
+                    border: "none",
+                    height: "100%",
                   }}
-                  onMouseEnter={(e) => { if (tab !== t.id) e.currentTarget.style.color = "#aaa"; }}
-                  onMouseLeave={(e) => { if (tab !== t.id) e.currentTarget.style.color = "#555"; }}
+                  onMouseEnter={(e) => {
+                    if (tab !== t.id) {
+                      e.currentTarget.style.color = "var(--ds-text-muted)";
+                      e.currentTarget.style.borderBottomColor = "var(--ds-border-soft)";
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (tab !== t.id) {
+                      e.currentTarget.style.color = "var(--ds-text-faint)";
+                      e.currentTarget.style.borderBottomColor = "transparent";
+                    }
+                  }}
                 >
                   {t.label}
                 </button>
@@ -68,7 +127,8 @@ export default function App() {
         </div>
       </header>
 
-      <main className="max-w-2xl mx-auto px-4 py-6">
+      {/* Main content */}
+      <main className="ds-main">
         {tab === "conversaciones" && <Conversaciones />}
         {tab === "contacts" && <Contacts />}
         {tab === "settings" && <Settings />}

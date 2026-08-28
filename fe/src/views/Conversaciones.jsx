@@ -3,20 +3,21 @@ import { api } from "../api/client";
 import AriaBadge from "../components/AriaBadge";
 import EmojiPicker from "../components/EmojiPicker";
 
-/** Avatar cuadrado 34×34 con imagen DiceBear o inicial como fallback. */
-function Avatar({ url, name, size = 34 }) {
+/** Avatar circular estilo WhatsApp con imagen DiceBear o inicial como fallback. */
+function Avatar({ url, name, size = 40 }) {
   const initial = (name || "?").charAt(0).toUpperCase();
   return url ? (
     <img
       src={url}
       alt=""
       loading="lazy"
-      style={{ width: size, height: size, background: "#131313", flexShrink: 0 }}
+      className="ds-avatar-circle"
+      style={{ width: size, height: size, flexShrink: 0 }}
     />
   ) : (
     <div
-      className="flex items-center justify-center font-mono text-[11px] text-[#555] bg-[#131313]"
-      style={{ width: size, height: size, flexShrink: 0 }}
+      className="ds-avatar-circle ds-avatar-initial"
+      style={{ width: size, height: size, flexShrink: 0, position: "relative" }}
     >
       {initial}
     </div>
@@ -24,15 +25,15 @@ function Avatar({ url, name, size = 34 }) {
 }
 
 const PRIORITY_META = {
-  alta: { label: "Alta", cls: "border-[#e8e8e8] text-[#e8e8e8]", rank: 0 },
-  media: { label: "Media", cls: "border-[#aaa] text-[#aaa]", rank: 1 },
-  baja: { label: "Baja", cls: "border-[#555] text-[#555]", rank: 2 },
+  alta: { label: "Alta", cls: "ds-priority-badge alta", rank: 0 },
+  media: { label: "Media", cls: "ds-priority-badge media", rank: 1 },
+  baja: { label: "Baja", cls: "ds-priority-badge baja", rank: 2 },
 };
 
 function PriorityBadge({ priority }) {
   const p = PRIORITY_META[priority] || PRIORITY_META.media;
   return (
-    <span className={`font-mono text-[9px] uppercase tracking-wider px-1.5 py-0 border ${p.cls}`}>
+    <span className={p.cls}>
       {priority?.toUpperCase() ?? "MEDIA"}
     </span>
   );
@@ -80,23 +81,23 @@ function AiChip({ ai, hideSummary = false }) {
   if (ai.isRecado) {
     const p = PRIORITY_META[ai.priority] || PRIORITY_META.media;
     return (
-      <div className="mt-2 pl-0">
-        <div className="flex items-center gap-2 mb-0.5">
-          <span className="font-mono text-[9px] text-[#555] uppercase tracking-wider">IA</span>
-          <span className={`font-mono text-[9px] uppercase tracking-wider px-1.5 border ${p.cls}`}>
+      <div className="ds-ai-chip">
+        <div style={{ display: "flex", alignItems: "center", gap: "var(--ds-space-2)", marginBottom: "var(--ds-space-1)" }}>
+          <span className="ds-ai-label">IA</span>
+          <span className={p.cls}>
             RECADO · {ai.priority?.toUpperCase()}
           </span>
         </div>
         {!hideSummary && ai.summary && (
-          <p className="text-[11px] text-[#555] italic leading-snug">{ai.summary}</p>
+          <p style={{ fontSize: "var(--ds-fs-xs)", color: "var(--ds-text-faint)", fontStyle: "italic", lineHeight: 1.4 }}>{ai.summary}</p>
         )}
       </div>
     );
   }
 
   return (
-    <div className="mt-1.5">
-      <span className="font-mono text-[9px] text-[#333] uppercase tracking-wider">IA · msj normal</span>
+    <div style={{ marginTop: "var(--ds-space-2)" }}>
+      <span style={{ fontFamily: "var(--ds-font-body)", fontWeight: "var(--ds-fw-regular)", fontSize: "var(--ds-fs-xs)", letterSpacing: "var(--ds-ls-caps)", textTransform: "uppercase", color: "var(--ds-border)" }}>IA · msj normal</span>
     </div>
   );
 }
@@ -110,27 +111,24 @@ function IncomingMessage({ m, ai, showSummaryAsMain, avatarUrl, contactName }) {
   const [showRaw, setShowRaw] = useState(false);
 
   return (
-    <div className="flex items-start gap-2">
+    <div style={{ display: "flex", alignItems: "flex-start", gap: "var(--ds-space-2)" }}>
       <Avatar url={avatarUrl} name={contactName} size={28} />
-      <div className="flex flex-col items-start min-w-0">
-        <div
-          className="max-w-full px-3 py-2 text-[13px] whitespace-pre-wrap break-words text-[#e8e8e8]"
-          style={{ background: "#0f0f0f", border: "1.5px solid #2a2a2a", borderLeft: "3px solid #2a2a2a" }}
-        >
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", minWidth: 0, flex: 1 }}>
+        <div className="ds-msg-bubble incoming">
           {/* Medio visual (imagen, sticker, gif) */}
           {m.mediaData && m.mediaType && (
-            <div className="mb-2">
+            <div style={{ marginBottom: "var(--ds-space-2)" }}>
               {m.mediaType === "video/mp4" ? (
                 <video
                   src={`data:${m.mediaType};base64,${m.mediaData}`}
                   autoPlay loop muted playsInline
-                  className="max-w-[220px] max-h-[220px] object-contain"
+                  style={{ maxWidth: "220px", maxHeight: "220px", objectFit: "contain" }}
                 />
               ) : (
                 <img
                   src={`data:${m.mediaType};base64,${m.mediaData}`}
                   alt=""
-                  className="max-w-[220px] max-h-[220px] object-contain"
+                  style={{ maxWidth: "220px", maxHeight: "220px", objectFit: "contain" }}
                 />
               )}
             </div>
@@ -141,29 +139,42 @@ function IncomingMessage({ m, ai, showSummaryAsMain, avatarUrl, contactName }) {
           {(() => {
             const isGenericLabel = m.mediaData && m.content?.startsWith("(el contacto envió");
             const displayText = showSummaryAsMain ? ai.summary : (isGenericLabel ? null : m.content);
-            return displayText ? <p className="leading-snug">{displayText}</p> : null;
+            return displayText ? <p style={{ lineHeight: 1.4 }}>{displayText}</p> : null;
           })()}
 
           {/* Toggle transcripción original (solo audios con resumen IA) */}
           {showSummaryAsMain && (
-            <div className="mt-2">
+            <div style={{ marginTop: "var(--ds-space-2)" }}>
               <button
                 type="button"
                 onClick={() => setShowRaw((v) => !v)}
-                className="font-mono text-[9px] uppercase tracking-wider text-[#555] hover:text-[#aaa] transition-colors"
+                style={{
+                  fontFamily: "var(--ds-font-body)",
+                  fontWeight: "var(--ds-fw-regular)",
+                  fontSize: "var(--ds-fs-xs)",
+                  letterSpacing: "var(--ds-ls-caps)",
+                  textTransform: "uppercase",
+                  color: "var(--ds-text-faint)",
+                  background: "none",
+                  border: "none",
+                  cursor: "pointer",
+                  transition: "color var(--ds-dur-hover)",
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.color = "var(--ds-text-muted)"}
+                onMouseLeave={(e) => e.currentTarget.style.color = "var(--ds-text-faint)"}
               >
                 {showRaw ? "▾ Mensaje original" : "▸ Mensaje original"}
               </button>
               {showRaw && (
-                <p className="mt-1 text-[11px] text-[#555] italic border-l-2 border-[#2a2a2a] pl-2 leading-snug">
+                <p style={{ marginTop: "var(--ds-space-1)", fontSize: "var(--ds-fs-xs)", color: "var(--ds-text-faint)", fontStyle: "italic", borderLeft: "2px solid var(--ds-border)", paddingLeft: "var(--ds-space-2)", lineHeight: 1.4 }}>
                   {m.content}
                 </p>
               )}
             </div>
           )}
 
-          <div className="font-mono text-[9px] mt-1.5 text-[#555]">
-            {m.isTranscribed && <span className="mr-1.5">🎙</span>}
+          <div className="ds-msg-meta">
+            {m.isTranscribed && <span style={{ marginRight: "var(--ds-space-1)" }}>🎙</span>}
             {new Date(m.createdAt).toLocaleString("es")}
           </div>
         </div>
@@ -198,7 +209,6 @@ function Conversation({ group, onRefresh }) {
       setLoading(false);
     }
   };
-
   useEffect(() => { load(); /* eslint-disable-next-line */ }, [group.contactId]);
   useEffect(() => { endRef.current?.scrollIntoView({ block: "nearest" }); }, [messages]);
 
@@ -278,10 +288,10 @@ function Conversation({ group, onRefresh }) {
   };
 
   return (
-    <div className="border-t border-[#1a1a1a] bg-[#0a0a0a]">
+    <div style={{ borderTop: "1px solid var(--ds-border)", background: "var(--ds-bg)" }}>
 
       {/* ── Tab bar ─────────────────────────────────────────────────────── */}
-      <div className="flex border-b border-[#1a1a1a]">
+      <div className="ds-tab-nav">
         {[
           { id: "recados", label: `Recados${group.recados.length ? ` (${group.recados.length})` : ""}` },
           { id: "mensajes", label: "Mensajes" },
@@ -290,10 +300,10 @@ function Conversation({ group, onRefresh }) {
             key={t.id}
             type="button"
             onClick={() => setTab(t.id)}
-            className="font-mono text-[10px] uppercase tracking-wider px-4 py-2.5 transition-colors"
+            className="ds-tab-btn"
             style={{
-              color: tab === t.id ? "#e8e8e8" : "#555",
-              borderBottom: tab === t.id ? "3px solid #e8e8e8" : "3px solid transparent",
+              color: tab === t.id ? "var(--ds-text-strong)" : "var(--ds-text-faint)",
+              borderBottom: tab === t.id ? "3px solid var(--ds-accent)" : "3px solid transparent",
             }}
           >
             {t.label}
@@ -303,68 +313,88 @@ function Conversation({ group, onRefresh }) {
 
       {/* ── Pestaña: Recados ────────────────────────────────────────────── */}
       {tab === "recados" && (
-        <div className="px-4 py-3">
+        <div style={{ padding: "var(--ds-space-3) var(--ds-space-4)" }}>
           {group.recados.length === 0 ? (
-            <p className="font-mono text-center text-[#555] py-6 text-[11px] uppercase tracking-wider">
+            <p style={{ textAlign: "center", color: "var(--ds-text-faint)", padding: "var(--ds-space-6) 0", fontFamily: "var(--ds-font-body)", fontWeight: "var(--ds-fw-regular)", fontSize: "var(--ds-fs-xs)", letterSpacing: "var(--ds-ls-caps)", textTransform: "uppercase" }}>
               Sin recados.
             </p>
           ) : (
             <>
-              <div className="flex justify-end mb-2">
+              <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: "var(--ds-space-2)" }}>
                 <button
                   type="button"
                   onClick={() => setShowOriginals((v) => !v)}
-                  className={`font-mono text-[9px] uppercase tracking-wider px-2 py-0.5 border transition-colors ${
-                    showOriginals
-                      ? "border-[#e8e8e8]/30 text-[#e8e8e8]"
-                      : "border-[#2a2a2a] text-[#555] hover:border-[#333] hover:text-[#aaa]"
-                  }`}
+                  style={{
+                    fontFamily: "var(--ds-font-body)",
+                    fontWeight: "var(--ds-fw-regular)",
+                    fontSize: "var(--ds-fs-xs)",
+                    letterSpacing: "var(--ds-ls-caps)",
+                    textTransform: "uppercase",
+                    padding: "var(--ds-space-1) var(--ds-space-2)",
+                    border: "1px solid var(--ds-border-soft)",
+                    background: showOriginals ? "var(--ds-surface)" : "transparent",
+                    color: showOriginals ? "var(--ds-text-strong)" : "var(--ds-text-faint)",
+                    cursor: "pointer",
+                    transition: "color var(--ds-dur-hover), border-color var(--ds-dur-hover)",
+                  }}
+                  onMouseEnter={(e) => { if (!showOriginals) e.currentTarget.style.borderColor = "var(--ds-border)"; }}
+                  onMouseLeave={(e) => { if (!showOriginals) e.currentTarget.style.borderColor = "var(--ds-border-soft)"; }}
                 >
                   {showOriginals ? "▾ Originales" : "▸ Ver originales"}
                 </button>
               </div>
-              <ul className="space-y-1.5">
+              <div style={{ display: "flex", flexDirection: "column", gap: "var(--ds-space-2)" }}>
                 {group.recados.map((r) => {
                   const hasOriginal = r.originalContent && r.originalContent !== r.content;
                   return (
-                    <li
+                    <div
                       key={r._id}
-                      className="bg-[#0f0f0f] border border-[#2a2a2a] p-2.5"
-                      style={{ borderLeft: r.read ? "3px solid #1a1a1a" : "3px solid #e8e8e8" }}
+                      className={`ds-recado-card ${r.read ? "" : "unread"}`}
                     >
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2 mb-1">
+                      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "var(--ds-space-2)" }}>
+                        <div style={{ minWidth: 0, flex: 1 }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: "var(--ds-space-2)", marginBottom: "var(--ds-space-1)" }}>
                             <PriorityBadge priority={r.priority} />
-                            <span className="font-mono text-[9px] text-[#555]">
+                            <span style={{ fontFamily: "var(--ds-font-body)", fontWeight: "var(--ds-fw-regular)", fontSize: "var(--ds-fs-xs)", color: "var(--ds-text-faint)" }}>
                               {new Date(r.createdAt).toLocaleString("es")}
                             </span>
                           </div>
-                          <p className={`text-[13px] leading-snug ${r.read ? "text-[#555]" : "text-[#e8e8e8]"}`}>
+                          <p style={{ fontSize: "var(--ds-fs-sm)", lineHeight: 1.4, color: r.read ? "var(--ds-text-faint)" : "var(--ds-text-strong)" }}>
                             {r.content}
                           </p>
                           {showOriginals && hasOriginal && (
-                            <div className="mt-2 border-l-2 border-[#1a1a1a] pl-3">
-                              <p className="font-mono text-[9px] uppercase tracking-widest text-[#555] mb-0.5">Original</p>
-                              <p className="text-[12px] text-[#555] whitespace-pre-wrap break-words">{r.originalContent}</p>
+                            <div style={{ marginTop: "var(--ds-space-2)", borderLeft: "2px solid var(--ds-border)", paddingLeft: "var(--ds-space-3)" }}>
+                              <p style={{ fontFamily: "var(--ds-font-body)", fontWeight: "var(--ds-fw-regular)", fontSize: "var(--ds-fs-xs)", letterSpacing: "var(--ds-ls-label)", textTransform: "uppercase", color: "var(--ds-text-faint)", marginBottom: "var(--ds-space-1)" }}>Original</p>
+                              <p style={{ fontSize: "var(--ds-fs-xs)", color: "var(--ds-text-faint)", whiteSpace: "pre-wrap", wordBreak: "break-words" }}>{r.originalContent}</p>
                             </div>
                           )}
                         </div>
                         <button
                           onClick={() => toggleRead(r)}
-                          className={`shrink-0 font-mono text-[9px] uppercase tracking-wider px-2 py-0.5 border transition-colors ${
-                            r.read
-                              ? "border-[#2a2a2a] text-[#555] hover:border-[#333]"
-                              : "border-[#e8e8e8]/30 text-[#e8e8e8] hover:border-[#e8e8e8]/60"
-                          }`}
+                          style={{
+                            fontFamily: "var(--ds-font-body)",
+                            fontWeight: "var(--ds-fw-regular)",
+                            fontSize: "var(--ds-fs-xs)",
+                            letterSpacing: "var(--ds-ls-caps)",
+                            textTransform: "uppercase",
+                            padding: "var(--ds-space-1) var(--ds-space-2)",
+                            border: "1px solid var(--ds-border-soft)",
+                            background: "transparent",
+                            color: r.read ? "var(--ds-text-faint)" : "var(--ds-text-strong)",
+                            cursor: "pointer",
+                            transition: "color var(--ds-dur-hover), border-color var(--ds-dur-hover)",
+                            flexShrink: 0,
+                          }}
+                          onMouseEnter={(e) => e.currentTarget.style.borderColor = "var(--ds-border)"}
+                          onMouseLeave={(e) => e.currentTarget.style.borderColor = "var(--ds-border-soft)"}
                         >
                           {r.read ? "Sin leer" : "Leído"}
                         </button>
                       </div>
-                    </li>
+                    </div>
                   );
                 })}
-              </ul>
+              </div>
             </>
           )}
         </div>
@@ -373,24 +403,24 @@ function Conversation({ group, onRefresh }) {
       {/* ── Pestaña: Mensajes + responder ───────────────────────────────── */}
       {tab === "mensajes" && (
         <>
-          <div className="px-4 py-3 max-h-80 overflow-y-auto">
+          <div style={{ padding: "var(--ds-space-3) var(--ds-space-4)", maxHeight: "320px", overflowY: "auto" }}>
             {loading && (
-              <p className="font-mono text-center text-[#555] py-6 text-[11px] uppercase tracking-wider">
+              <p style={{ textAlign: "center", color: "var(--ds-text-faint)", padding: "var(--ds-space-6) 0", fontFamily: "var(--ds-font-body)", fontWeight: "var(--ds-fw-regular)", fontSize: "var(--ds-fs-xs)", letterSpacing: "var(--ds-ls-caps)", textTransform: "uppercase" }}>
                 Cargando...
               </p>
             )}
             {error && (
-              <p className="font-mono text-center text-[#555] py-6 text-[11px] uppercase tracking-wider">
+              <p style={{ textAlign: "center", color: "var(--ds-text-faint)", padding: "var(--ds-space-6) 0", fontFamily: "var(--ds-font-body)", fontWeight: "var(--ds-fw-regular)", fontSize: "var(--ds-fs-xs)", letterSpacing: "var(--ds-ls-caps)", textTransform: "uppercase" }}>
                 {error}
               </p>
             )}
             {!loading && !error && messages?.length === 0 && (
-              <p className="font-mono text-center text-[#555] py-6 text-[11px] uppercase tracking-wider">
+              <p style={{ textAlign: "center", color: "var(--ds-text-faint)", padding: "var(--ds-space-6) 0", fontFamily: "var(--ds-font-body)", fontWeight: "var(--ds-fw-regular)", fontSize: "var(--ds-fs-xs)", letterSpacing: "var(--ds-ls-caps)", textTransform: "uppercase" }}>
                 Sin mensajes registrados.
               </p>
             )}
             {!loading && !error && messages?.length > 0 && (
-              <div className="space-y-4">
+              <div style={{ display: "flex", flexDirection: "column", gap: "var(--ds-space-4)" }}>
                 {messages.map((m) => {
                   const mine = m.role === "assistant";
                   if (!mine) {
@@ -408,13 +438,10 @@ function Conversation({ group, onRefresh }) {
                     );
                   }
                   return (
-                    <div key={m._id} className="flex justify-end">
-                      <div
-                        className="max-w-[78%] px-3 py-2 text-[13px] whitespace-pre-wrap break-words text-[#e8e8e8]"
-                        style={{ background: "#131313", border: "1.5px solid #2a2a2a", borderRight: "3px solid #e8e8e8" }}
-                      >
+                    <div key={m._id} style={{ display: "flex", justifyContent: "flex-end" }}>
+                      <div className="ds-msg-bubble outgoing" style={{ maxWidth: "78%" }}>
                         {m.content}
-                        <div className="font-mono text-[9px] mt-1.5 text-[#555]">
+                        <div className="ds-msg-meta">
                           {m.via === "manual" ? "✍ manual · " : "⬡ auto · "}
                           {new Date(m.createdAt).toLocaleString("es")}
                         </div>
@@ -429,55 +456,79 @@ function Conversation({ group, onRefresh }) {
 
           {/* Preview adjunto */}
           {attachment && (
-            <div className="flex items-center gap-2 px-4 py-2 border-t border-[#1a1a1a] bg-[#0f0f0f]">
+            <div style={{ display: "flex", alignItems: "center", gap: "var(--ds-space-2)", padding: "var(--ds-space-2) var(--ds-space-4)", borderTop: "1px solid var(--ds-border)", background: "var(--ds-surface)" }}>
               {attachment.preview ? (
-                <img src={attachment.preview} alt="" className="h-10 w-10 object-cover bg-[#131313]" />
+                <img src={attachment.preview} alt="" style={{ height: "40px", width: "40px", objectFit: "cover", background: "var(--ds-bg)" }} />
               ) : (
-                <span className="font-mono text-[#555] text-[18px]">📎</span>
+                <span style={{ fontFamily: "var(--ds-font-body)", color: "var(--ds-text-faint)", fontSize: "18px" }}>📎</span>
               )}
-              <span className="font-mono text-[10px] text-[#aaa] truncate flex-1">{attachment.filename}</span>
+              <span style={{ fontFamily: "var(--ds-font-body)", fontWeight: "var(--ds-fw-regular)", fontSize: "var(--ds-fs-xs)", color: "var(--ds-text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>{attachment.filename}</span>
               <button
                 type="button"
                 onClick={clearAttachment}
-                className="font-mono text-[10px] text-[#555] hover:text-[#e8e8e8] px-1.5 transition-colors"
+                style={{ fontFamily: "var(--ds-font-body)", fontWeight: "var(--ds-fw-regular)", fontSize: "var(--ds-fs-xs)", color: "var(--ds-text-faint)", padding: "var(--ds-space-1)", background: "none", border: "none", cursor: "pointer", transition: "color var(--ds-dur-hover)" }}
+                onMouseEnter={(e) => e.currentTarget.style.color = "var(--ds-text-strong)"}
+                onMouseLeave={(e) => e.currentTarget.style.color = "var(--ds-text-faint)"}
               >
                 ✕
               </button>
             </div>
           )}
 
-          <form onSubmit={send} className="flex items-stretch border-t border-[#1a1a1a] bg-[#0a0a0a]">
-            <div className="flex-1 flex items-center gap-3 px-4 py-3">
-              <AriaBadge className="text-[#555] shrink-0" />
+          <form onSubmit={send} style={{ display: "flex", alignItems: "stretch", borderTop: "1px solid var(--ds-border)", background: "var(--ds-bg)" }}>
+            <div style={{ flex: 1, display: "flex", alignItems: "center", gap: "var(--ds-space-3)", padding: "var(--ds-space-3) var(--ds-space-4)" }}>
+              <AriaBadge className="text-[var(--ds-text-faint)] shrink-0" />
               <input
                 ref={inputRef}
                 value={text}
                 onChange={(e) => setText(e.target.value)}
                 placeholder={attachment ? "Añade una descripción (opcional)..." : "escribe una respuesta..."}
-                className="flex-1 bg-transparent text-[#e8e8e8] outline-none text-[13px] placeholder:text-[#555] placeholder:font-mono placeholder:text-[11px]"
+                style={{
+                  flex: 1,
+                  background: "transparent",
+                  color: "var(--ds-text-strong)",
+                  outline: "none",
+                  fontSize: "var(--ds-fs-sm)",
+                  fontFamily: "var(--ds-font-body)",
+                  fontWeight: "var(--ds-fw-regular)",
+                  border: "none",
+                }}
               />
             </div>
-            <div className="flex items-center gap-0 border-l border-[#1a1a1a]">
+            <div style={{ display: "flex", alignItems: "center", borderLeft: "1px solid var(--ds-border)" }}>
               {/* Input file oculto */}
               <input
                 ref={fileInputRef}
                 type="file"
                 accept="image/*,video/*,application/pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.zip,.rar,.txt"
                 onChange={handleFileSelect}
-                className="hidden"
+                style={{ display: "none" }}
               />
               {/* Botón adjunto */}
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
                 title="Adjuntar archivo"
-                className="h-9 w-9 flex items-center justify-center text-[#555] hover:text-[#aaa] transition-colors"
+                style={{
+                  height: "36px",
+                  width: "36px",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  color: "var(--ds-text-faint)",
+                  background: "none",
+                  border: "none",
+                  cursor: "pointer",
+                  transition: "color var(--ds-dur-hover)",
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.color = "var(--ds-text-muted)"}
+                onMouseLeave={(e) => e.currentTarget.style.color = "var(--ds-text-faint)"}
               >
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="square">
                   <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
                 </svg>
               </button>
-              <div className="border-l border-[#1a1a1a]">
+              <div style={{ borderLeft: "1px solid var(--ds-border)" }}>
                 <EmojiPicker
                   placement="top"
                   onPick={(emoji) => {
@@ -499,13 +550,30 @@ function Conversation({ group, onRefresh }) {
             <button
               type="submit"
               disabled={sending || (!text.trim() && !attachment)}
-              className="font-mono text-[10px] uppercase tracking-wider px-5 bg-[#e8e8e8] text-[#0c0c0c] border-l border-[#1a1a1a] disabled:opacity-25 hover:bg-[#d0d0d0] transition-colors"
+              className="ds-btn-primary"
+              style={{
+                fontFamily: "var(--ds-font-body)",
+                fontWeight: "var(--ds-fw-medium)",
+                fontSize: "var(--ds-fs-xs)",
+                letterSpacing: "var(--ds-ls-caps)",
+                textTransform: "uppercase",
+                padding: "var(--ds-space-3) var(--ds-space-5)",
+                background: "var(--ds-accent)",
+                color: "#fff",
+                border: "none",
+                borderLeft: "1px solid var(--ds-border)",
+                cursor: "pointer",
+                opacity: sending || (!text.trim() && !attachment) ? 0.25 : 1,
+                transition: "opacity var(--ds-dur-hover)",
+              }}
+              onMouseEnter={(e) => { if (!sending && (text.trim() || attachment)) e.currentTarget.style.opacity = 0.8; }}
+              onMouseLeave={(e) => { if (!sending && (text.trim() || attachment)) e.currentTarget.style.opacity = 1; }}
             >
               {sending ? "···" : "Enviar"}
             </button>
           </form>
           {sendError && (
-            <p className="font-mono px-4 pb-3 text-[9px] uppercase tracking-wider text-[#555]">{sendError}</p>
+            <p style={{ fontFamily: "var(--ds-font-body)", fontWeight: "var(--ds-fw-regular)", fontSize: "var(--ds-fs-xs)", letterSpacing: "var(--ds-ls-caps)", textTransform: "uppercase", color: "var(--ds-text-faint)", padding: "0 var(--ds-space-4)", paddingBottom: "var(--ds-space-3)" }}>{sendError}</p>
           )}
         </>
       )}
@@ -556,65 +624,64 @@ export default function Conversaciones() {
 
   return (
     <div>
-      <h1 className="font-mono text-[11px] uppercase tracking-widest text-[#e8e8e8] mb-5">
+      <h1 className="ds-display" style={{ fontSize: "var(--ds-fs-sm)", marginBottom: "var(--ds-space-4)", color: "var(--ds-text-strong)" }}>
         Conversaciones
       </h1>
 
       {loading && (
-        <p className="font-mono text-center text-[#555] py-12 text-[11px] uppercase tracking-wider">
+        <p style={{ textAlign: "center", color: "var(--ds-text-faint)", padding: "var(--ds-space-12) 0", fontFamily: "var(--ds-font-body)", fontWeight: "var(--ds-fw-regular)", fontSize: "var(--ds-fs-xs)", letterSpacing: "var(--ds-ls-caps)", textTransform: "uppercase" }}>
           Cargando...
         </p>
       )}
       {error && (
-        <p className="font-mono text-center text-[#555] py-12 text-[11px] uppercase tracking-wider">
+        <p style={{ textAlign: "center", color: "var(--ds-text-faint)", padding: "var(--ds-space-12) 0", fontFamily: "var(--ds-font-body)", fontWeight: "var(--ds-fw-regular)", fontSize: "var(--ds-fs-xs)", letterSpacing: "var(--ds-ls-caps)", textTransform: "uppercase" }}>
           {error}
         </p>
       )}
       {!loading && !error && groups.length === 0 && (
-        <p className="font-mono text-center text-[#555] py-12 text-[11px] uppercase tracking-wider">
+        <p style={{ textAlign: "center", color: "var(--ds-text-faint)", padding: "var(--ds-space-12) 0", fontFamily: "var(--ds-font-body)", fontWeight: "var(--ds-fw-regular)", fontSize: "var(--ds-fs-xs)", letterSpacing: "var(--ds-ls-caps)", textTransform: "uppercase" }}>
           Sin conversaciones.
         </p>
       )}
 
       {!loading && !error && groups.length > 0 && (
-        <ul className="border border-[#1a1a1a] divide-y divide-[#1a1a1a]">
+        <div className="ds-list">
           {groups.map((g) => {
             const expanded = open === g.contactId;
             return (
-              <li
+              <div
                 key={g.contactId}
-                className="bg-[#0f0f0f] overflow-hidden"
-                style={{ borderLeft: expanded ? "3px solid #e8e8e8" : "3px solid transparent" }}
+                className={`ds-list-item ${expanded ? "active" : ""}`}
               >
                 <button
                   onClick={() => setOpen(expanded ? null : g.contactId)}
-                  className="w-full flex items-center justify-between gap-3 px-4 py-3.5 text-left hover:bg-[#131313] transition-colors"
+                  className="ds-list-item-content"
                 >
                   <Avatar url={g.avatarUrl} name={g.contactName} />
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2.5 mb-1">
-                      <p className="font-mono text-[12px] text-[#e8e8e8] truncate">{g.contactName}</p>
+                  <div style={{ minWidth: 0, flex: 1 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "var(--ds-space-2)", marginBottom: "var(--ds-space-1)" }}>
+                      <p style={{ fontFamily: "var(--ds-font-body)", fontWeight: "var(--ds-fw-regular)", fontSize: "var(--ds-fs-sm)", color: "var(--ds-text-strong)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{g.contactName}</p>
                       {g.hasRecados && <PriorityBadge priority={g.topPriority} />}
                       {g.unread > 0 && (
-                        <span className="font-mono inline-flex items-center justify-center min-w-[1.125rem] h-[1.125rem] px-1 text-[9px] font-bold text-[#0c0c0c] bg-[#e8e8e8]">
+                        <span className="ds-counter-badge">
                           {g.unread}
                         </span>
                       )}
                     </div>
-                    <p className="text-[12px] text-[#555] truncate leading-snug">{g.lastMessage}</p>
-                    <p className="font-mono text-[9px] text-[#333] mt-1">
+                    <p style={{ fontSize: "var(--ds-fs-sm)", color: "var(--ds-text-faint)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", lineHeight: 1.4 }}>{g.lastMessage}</p>
+                    <p style={{ fontFamily: "var(--ds-font-body)", fontWeight: "var(--ds-fw-regular)", fontSize: "var(--ds-fs-xs)", color: "var(--ds-border)", marginTop: "var(--ds-space-1)" }}>
                       {new Date(g.lastAt).toLocaleString("es")}
                     </p>
                   </div>
-                  <span className="shrink-0 font-mono text-[#555] text-[11px]">
+                  <span style={{ flexShrink: 0, fontFamily: "var(--ds-font-body)", color: "var(--ds-text-faint)", fontSize: "var(--ds-fs-xs)" }}>
                     {expanded ? "▾" : "▸"}
                   </span>
                 </button>
                 {expanded && <Conversation group={g} onRefresh={refresh} />}
-              </li>
+              </div>
             );
           })}
-        </ul>
+        </div>
       )}
     </div>
   );

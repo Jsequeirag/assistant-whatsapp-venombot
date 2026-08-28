@@ -5,7 +5,6 @@ const contactSchema = new Schema(
     contactId: { type: String, required: true, unique: true }, // "5491112345678@c.us"
     number: { type: String, required: true },
     name: { type: String, default: "" },
-    autoAssist: { type: Boolean, default: false },
     avatarUrl: { type: String, default: "" }, // URL de DiceBear generada del nombre
   },
   { timestamps: true }

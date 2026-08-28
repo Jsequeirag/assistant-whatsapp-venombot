@@ -304,9 +304,7 @@ async function processMessage(client, msg) {
 
   // Estado de presencia (DND > Sleep > disponible).
   const { status, reason: statusReason } = await modeService.getPresence();
-  // contactAssist = el asistente global está activo (ya no hay override por contacto).
   const globalAssist = settings.autoAssist.globalEnabled;
-  const contactAssist = globalAssist;
 
   console.log(`   ↳ status=${status} | global=${globalAssist}`);
 
@@ -325,7 +323,7 @@ async function processMessage(client, msg) {
 
   if (!appropriate) {
     console.log(`🚫 Contenido inapropiado bloqueado de ${contact.name}: [${contentType}]`);
-    if (contactAssist) {
+    if (globalAssist) {
       let response;
       if (!alreadyGreeted) {
         // Primera interacción: presentarse + decline en un solo mensaje natural.
@@ -385,7 +383,7 @@ Mensaje recibido: "${messageText.slice(0, 200)}"`;
     if (greetingTracked) await modeService.markResponded(status, contactId);
     session.greetedOnce = true;
     // Si va a seguir conversando, el saludo entra al historial para dar contexto.
-    if (contactAssist) {
+    if (globalAssist) {
       contactService.addToHistory(contactId, "user", messageText);
       contactService.addToHistory(contactId, "model", greeting);
     }
@@ -394,7 +392,7 @@ Mensaje recibido: "${messageText.slice(0, 200)}"`;
   }
 
   // ─── Ya saludamos: sin auto-asistir por contacto → silencio (solo recados) ──
-  if (!contactAssist) {
+  if (!globalAssist) {
     console.log(`   ↳ silencio: ya saludado, contacto sin auto-asistir`);
     return;
   }
@@ -416,7 +414,7 @@ No podés ver el contenido. Respondé con UN mensaje muy breve y natural reconoc
 NO preguntes qué hay en la imagen ni pidas que lo expliquen.
 Ejemplos de tono: "Recibido 👍", "Perfecto, se lo hago saber a ${ownerName}.", "Anotado."
 Sé natural y conciso. Mismo idioma que el contacto.`
-        : buildAutoAssistPrompt(ownerName, assistantName, false),
+        : buildAutoAssistPrompt(ownerName, assistantName),
       isVisualMediaOnly ? [] : session.conversationHistory.slice(0, -1),
       messageText
     )
@@ -510,14 +508,8 @@ Respondé ÚNICAMENTE con el mensaje, sin comillas ni prefijos.`;
   }
 }
 
-function buildAutoAssistPrompt(ownerName, assistantName, isFirstMessage) {
-  const intro = isFirstMessage
-    ? `IMPORTANTE: Es el PRIMER mensaje. Presentate así (adaptá el idioma si es necesario, usá 1 o 2 emojis naturales):
-"Hola 👋 Soy ${assistantName}, el asistente de ${ownerName}. En este momento no está disponible, pero estoy aquí para ayudarte. ¿Deseas dejarle un recado o hay algo en lo que pueda asistirte?"
-Luego continuá la conversación con normalidad.\n\n`
-    : "";
-
-  return `${intro}Eres ${assistantName}, el asistente personal de ${ownerName}. Sos ${assistantName}, NO sos ${ownerName}.
+function buildAutoAssistPrompt(ownerName, assistantName) {
+  return `Eres ${assistantName}, el asistente personal de ${ownerName}. Sos ${assistantName}, NO sos ${ownerName}.
 Ya te presentaste como ${assistantName} en el primer mensaje: NO vuelvas a presentarte ni repitas
 en cada mensaje que sos asistente; hablá con naturalidad como lo haría un asistente real.
 Tu objetivo: conversar de forma cálida y humana, entender qué necesita el contacto y tomar su recado.

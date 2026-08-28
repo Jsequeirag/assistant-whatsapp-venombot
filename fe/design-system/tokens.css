@@ -1,0 +1,239 @@
+/* =====================================================================
+   DESIGN SYSTEM — "Sequeira / Editorial Dark"
+   Base de diseño compartida. Copiar este archivo a cualquier proyecto
+   nuevo e importarlo una sola vez (ej. en main.tsx o index.css):
+       import './design-system/tokens.css'
+   Luego usar las variables var(--ds-*) o las clases utilitarias .ds-*.
+   ===================================================================== */
+
+:root {
+  /* ---- Color · Fondos -------------------------------------------- */
+  --ds-bg:            #07070f;   /* fondo base (casi negro azulado)   */
+  --ds-surface:       #0e0e1a;   /* tarjetas / paneles                */
+  --ds-surface-glass: rgba(7, 7, 15, 0.7);  /* overlay con blur       */
+
+  /* ---- Color · Bordes / líneas ----------------------------------- */
+  --ds-border:        #141428;   /* divisores y bordes estándar       */
+  --ds-border-soft:   #1a1a28;   /* bordes de chips / sutiles         */
+
+  /* ---- Color · Acento -------------------------------------------- */
+  --ds-accent:        #1a2fff;   /* azul eléctrico (color de marca)   */
+  --ds-accent-55:     #1a2fff55; /* acento al ~33% (hover bordes)     */
+  --ds-accent-33:     #1a2fff33; /* glows                             */
+  --ds-accent-22:     #1a2fff22; /* bordes muy sutiles                */
+
+  /* ---- Color · Texto --------------------------------------------- */
+  --ds-text-strong:   #ffffff;   /* títulos                           */
+  --ds-text:          #e2ddd5;   /* cuerpo principal (blanco cálido)  */
+  --ds-text-muted:    #9a9ab2;   /* descripciones                     */
+  --ds-text-muted-2:  #8a8aa0;   /* secundario                        */
+  --ds-text-faint:    #6e6e88;   /* etiquetas / metadatos             */
+
+  /* ---- Color · Estado -------------------------------------------- */
+  --ds-success:       #22c77a;   /* "disponible" / online             */
+
+  /* ---- Tipografía ------------------------------------------------- */
+  --ds-font-display: 'Big Shoulders Display', sans-serif; /* titulares condensados, UPPERCASE */
+  --ds-font-body:    'DM Sans', sans-serif;               /* cuerpo y etiquetas               */
+
+  /* Pesos semánticos — REGLA DE LEGIBILIDAD:
+       · texto < 15px  → nunca por debajo de --ds-fw-regular (400)
+       · etiquetas en MAYÚSCULAS con tracking ancho → --ds-fw-medium (500)
+       · --ds-fw-light (300) SOLO para párrafos >= 15px
+     El peso 200 no se usa en UI: es ilegible a tamaños pequeños.
+
+     Nota de contraste: el texto en color de ACENTO (azul) sobre fondo oscuro
+     se percibe más delgado por su baja luminancia → usa --ds-fw-strong (600). */
+  --ds-fw-light:   300;
+  --ds-fw-regular: 400;
+  --ds-fw-medium:  500;
+  --ds-fw-strong:  600;
+  --ds-fw-display: 900;
+
+  /* Escala (clamp = responsive fluido) */
+  --ds-fs-hero:    clamp(56px, 7vw, 88px);
+  --ds-fs-h2:      clamp(42px, 4vw, 56px);
+  --ds-fs-stat:    36px;
+  --ds-fs-lead:    19px;
+  --ds-fs-body:    17px;
+  --ds-fs-desc:    15px;
+  --ds-fs-sm:      13px;
+  --ds-fs-xs:      12px;
+  --ds-fs-label:   11px;
+
+  /* Tracking (letter-spacing) */
+  --ds-ls-label:   4px;   /* etiquetas de sección UPPERCASE */
+  --ds-ls-caps:    2px;   /* small caps                     */
+  --ds-ls-tight:   1px;
+
+  /* Interlineado */
+  --ds-lh-hero:    0.85;
+  --ds-lh-head:    0.92;
+  --ds-lh-lead:    1.5;
+  --ds-lh-body:    1.85;
+
+  /* ---- Espaciado (escala de 4px) --------------------------------- */
+  --ds-space-1:  4px;
+  --ds-space-2:  8px;
+  --ds-space-3:  12px;
+  --ds-space-4:  16px;
+  --ds-space-6:  24px;
+  --ds-space-7:  28px;
+  --ds-space-8:  32px;
+  --ds-space-12: 48px;
+  --ds-space-20: 80px;
+  --ds-space-30: 120px;
+
+  /* ---- Layout ----------------------------------------------------- */
+  --ds-max-content:    1200px;
+  --ds-pad-section-x:  48px;
+  --ds-pad-section-y:  80px;
+
+  /* ---- Bordes / radios ------------------------------------------- */
+  --ds-bar-thin:   2px;   /* barra de acento corta */
+  --ds-bar-thick:  3px;
+
+  /* ---- Movimiento ------------------------------------------------- */
+  --ds-ease-reveal: cubic-bezier(0.65, 0, 0.15, 1);
+  --ds-dur-reveal:  1.6s;   /* clip-path de entrada    */
+  --ds-dur-hover:   0.2s;   /* micro-interacciones     */
+}
+
+/* =====================================================================
+   RESET + BASE
+   ===================================================================== */
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+html { scroll-behavior: smooth; }
+
+body {
+  background: var(--ds-bg);
+  color: var(--ds-text);
+  font-family: var(--ds-font-body);
+  font-weight: 300;
+  overflow-x: hidden;
+}
+
+a { color: inherit; text-decoration: none; }
+
+::selection { background: var(--ds-accent); color: #fff; }
+
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: var(--ds-bg); }
+::-webkit-scrollbar-thumb { background: var(--ds-accent); }
+
+/* =====================================================================
+   UTILIDADES
+   ===================================================================== */
+
+/* Etiqueta de sección — "— Sección" en azul con tracking ancho */
+.ds-sec-label {
+  font-family: var(--ds-font-body);
+  font-weight: var(--ds-fw-medium);
+  font-size: var(--ds-fs-label);
+  letter-spacing: var(--ds-ls-label);
+  text-transform: uppercase;
+  color: var(--ds-accent);
+}
+
+/* Titular display: condensado, mayúsculas, muy ajustado */
+.ds-display {
+  font-family: var(--ds-font-display);
+  font-weight: 900;
+  text-transform: uppercase;
+  line-height: var(--ds-lh-head);
+  letter-spacing: 1px;
+  color: var(--ds-text-strong);
+}
+
+/* Líneas divisorias */
+.ds-rule       { width: 100%; height: 1px; background: var(--ds-border); }
+.ds-rule-blue  { width: 100%; height: 1px;
+                 background: linear-gradient(90deg, var(--ds-accent) 0%, transparent 60%); }
+
+/* Barra de acento (el "tick" vertical junto a títulos) */
+.ds-accent-bar { width: var(--ds-bar-thin); height: 32px; background: var(--ds-accent); }
+
+/* Tarjeta base */
+.ds-card {
+  background: var(--ds-surface);
+  border: 1px solid var(--ds-border);
+  transition: border-color var(--ds-dur-hover);
+}
+.ds-card:hover { border-color: var(--ds-accent-55); }
+
+/* Chip / tag */
+.ds-tag {
+  font-family: var(--ds-font-body);
+  font-weight: var(--ds-fw-regular);
+  font-size: var(--ds-fs-xs);
+  letter-spacing: var(--ds-ls-caps);
+  text-transform: uppercase;
+  color: var(--ds-text-muted-2);
+  padding: 5px 12px;
+  border: 1px solid var(--ds-border-soft);
+}
+
+/* Botón primario (acento sólido) */
+.ds-btn {
+  background: var(--ds-accent);
+  color: #fff;
+  font-family: var(--ds-font-display);
+  font-weight: 700;
+  font-size: var(--ds-fs-sm);
+  letter-spacing: var(--ds-ls-caps);
+  text-transform: uppercase;
+  padding: 12px 28px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  transition: opacity var(--ds-dur-hover);
+  cursor: pointer;
+  border: none;
+}
+.ds-btn:hover { opacity: 0.8; }
+
+/* Botón secundario (texto) */
+.ds-btn-ghost {
+  font-family: var(--ds-font-display);
+  font-weight: 600;
+  font-size: var(--ds-fs-sm);
+  letter-spacing: var(--ds-ls-caps);
+  text-transform: uppercase;
+  color: var(--ds-text-muted-2);
+  padding: 12px 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  transition: color var(--ds-dur-hover);
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+.ds-btn-ghost:hover { color: var(--ds-text); }
+
+/* Contenedor de sección centrado */
+.ds-section {
+  padding: var(--ds-pad-section-y) var(--ds-pad-section-x);
+  border-bottom: 1px solid var(--ds-border);
+}
+.ds-container { max-width: var(--ds-max-content); margin: 0 auto; }
+
+/* Punto de estado "disponible" */
+.ds-status-dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--ds-success);
+  box-shadow: 0 0 8px #22c77a88;
+}
+
+/* Cursor personalizado (opcional) */
+.ds-cursor-dot {
+  width: 6px; height: 6px;
+  background: var(--ds-accent);
+  border-radius: 50%;
+  position: fixed;
+  pointer-events: none;
+  z-index: 9999;
+  transition: transform 0.1s;
+  mix-blend-mode: screen;
+}
