@@ -4,6 +4,7 @@ const settings = require("../controllers/settings.controller");
 const contacts = require("../controllers/contacts.controller");
 const audit = require("../controllers/audit.controller");
 const whatsapp = require("../controllers/whatsapp.controller");
+const media = require("../controllers/media.controller");
 
 const router = Router();
 
@@ -20,6 +21,7 @@ router.patch("/settings/identity", settings.updateIdentity);
 router.patch("/settings/groq", settings.updateGroq);
 router.get("/settings/groq/models", settings.listGroqModels);
 router.patch("/settings/retention", settings.updateRetention);
+router.patch("/settings/test-mode", settings.updateTestMode);
 
 // ─── Auditoría de servicios ────────────────────────────────────────────────────
 router.get("/audit", audit.list);
@@ -29,11 +31,15 @@ router.post("/audit/check", audit.runCheck);
 router.get("/whatsapp/status", whatsapp.status);
 router.post("/whatsapp/restart", whatsapp.restart);
 
+// ─── Medios (disco / legado Base64) ───────────────────────────────────────────
+router.get("/media/:id", media.send);
+
 // ─── Contactos ────────────────────────────────────────────────────────────────
 router.get("/contacts", contacts.list);
 router.post("/contacts", contacts.create);
 // Ruta fija antes de /:id para que no sea capturada como parámetro
 router.get("/contacts/messages-summary", contacts.getMessagesSummary);
+router.get("/contacts/:id/avatar", contacts.avatar);
 router.patch("/contacts/:id", contacts.update);
 
 router.delete("/contacts/:id", contacts.remove);

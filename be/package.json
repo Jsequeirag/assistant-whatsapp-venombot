@@ -12,6 +12,7 @@
     "clean": "rm -rf dist",
     "prepare": "npm run clean && npm run build",
     "postinstall": "node scripts/download-chromium.js",
+    "test": "node --test \"test/aria/**/*.test.js\"",
     "bot": "node bot/index.js",
     "bot:local": "node --use-system-ca bot/index.js",
     "start:bot": "npm run build && node bot/index.js"
@@ -48,13 +49,12 @@
     "node": ">=18.0.0"
   },
   "dependencies": {
-    "@google/genai": "^2.8.0",
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
-    "groq-sdk": "^1.2.1",
     "mime-types": "^2.1.35",
     "mongoose": "^9.7.1",
+    "openai": "^6.49.0",
     "pino": "^9.6.0",
     "puppeteer": "^24.0.0",
     "qrcode": "^1.5.4",

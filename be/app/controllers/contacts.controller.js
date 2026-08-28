@@ -1,6 +1,8 @@
 const contactService = require("../services/contact.service");
 const messageService = require("../services/message.service");
 const whatsappService = require("../services/whatsapp.service");
+const mediaService = require("../services/media.service");
+const { dicebearUrl } = require("../lib/avatar");
 
 /** Express ya decodifica params; un `%` suelto no debe tirar URIError 500. */
 function contactIdFrom(req) {
@@ -40,6 +42,24 @@ async function remove(req, res) {
   res.json({ ok: true });
 }
 
+/** GET /api/contacts/:id/avatar — foto de WhatsApp en disco, o DiceBear. */
+async function avatar(req, res) {
+  const contactId = contactIdFrom(req);
+  const contact = await contactService.getById(contactId);
+  if (!contact) return res.status(404).json({ error: "Contacto no encontrado" });
+
+  if (contact.avatarPath && mediaService.fileExists(contact.avatarPath)) {
+    const abs = mediaService.absolutePath(contact.avatarPath);
+    res.set("Cache-Control", "public, max-age=86400");
+    res.type(mediaService.mimeForRel(contact.avatarPath));
+    return res.sendFile(abs);
+  }
+
+  const generated = dicebearUrl(contact.name || contact.number || contactId);
+  res.set("Cache-Control", "public, max-age=3600");
+  return res.redirect(generated);
+}
+
 // ─── Fase 5: vista conversacional ──────────────────────────────────────────────
 
 /** Todos los contactos que tienen al menos un mensaje entrante, con su último mensaje. */
@@ -73,8 +93,9 @@ async function reply(req, res) {
     content: text,
     via: "manual",
   });
-  // Mantener el historial in-memory en sync para que el LLM tenga el contexto del envío manual.
+  await contactService.ensureSession(contactId);
   contactService.addToHistory(contactId, "model", text);
+  contactService.touchSession(contactId);
   res.status(201).json(message);
 }
 
@@ -102,11 +123,13 @@ async function replyFile(req, res) {
     role: "assistant",
     content,
     via: "manual",
-    mediaData: isVisual ? raw : undefined,
+    mediaBuffer: isVisual && raw ? Buffer.from(raw, "base64") : undefined,
     mediaType: isVisual ? mimetype : undefined,
   });
+  await contactService.ensureSession(contactId);
   contactService.addToHistory(contactId, "model", content);
+  contactService.touchSession(contactId);
   res.status(201).json(message);
 }
 
-module.exports = { list, create, update, remove, getMessagesSummary, getMessages, reply, replyFile };
+module.exports = { list, create, update, remove, avatar, getMessagesSummary, getMessages, reply, replyFile };

@@ -6,6 +6,7 @@ const {
   registerSelfId,
   enqueueByContact,
 } = require("../controllers/webhook.controller");
+const incoming = require("../lib/incoming");
 const auditService = require("./audit.service");
 const Contact = require("../models/Contact");
 
@@ -71,6 +72,11 @@ async function _disposeClient() {
 
 function _attachHandlers(client) {
   client.onMessage((msg) => {
+    enqueueByContact(msg.from || "", () => processMessage(client, msg));
+  });
+  // fromMe (chat "Tú" / envíos propios). processMessage los descarta salvo ambiente de pruebas.
+  client.onAnyMessage((msg) => {
+    if (!msg?.fromMe) return;
     enqueueByContact(msg.from || "", () => processMessage(client, msg));
   });
 
@@ -232,6 +238,8 @@ async function resolveChatId(contactId) {
  */
 async function sendText(contactId, text) {
   const dest = await resolveChatId(contactId);
+  incoming.rememberOutgoing(dest, text);
+  if (dest !== contactId) incoming.rememberOutgoing(contactId, text);
   return _client.sendText(dest, text);
 }
 
@@ -314,6 +322,8 @@ async function sendFileBase64(contactId, { base64, filename, mimetype, caption }
       }
     });
 
+    incoming.rememberOutgoing(dest, caption || filename);
+    if (dest !== contactId) incoming.rememberOutgoing(contactId, caption || filename);
     if (isImage) {
       return await _client.sendImage(dest, tmpPath, caption || "", filename);
     }

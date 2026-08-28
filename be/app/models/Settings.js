@@ -18,12 +18,13 @@ const settingsSchema = new Schema({
     ownerName: { type: String, default: "el usuario" },
     assistantName: { type: String, default: "Ari" },
   },
+  // Proveedor OpenAI-compatible (nombre histórico "groq"; el cliente habla /v1/chat/completions).
   groq: {
     apiKey: { type: String, default: "" },
     model: { type: String, default: "qwen/qwen3-32b" },
-    // URL base del proveedor OpenAI-compatible. Vacío = usar Groq por defecto.
+    // URL /v1 del proveedor. Vacío = Groq (https://api.groq.com/openai/v1).
     baseUrl: { type: String, default: "" },
-    // Modelo de transcripción de voz (Whisper o compatible).
+    // POST /v1/audio/transcriptions. No todos los clones lo implementan.
     voiceModel: { type: String, default: "whisper-large-v3-turbo" },
   },
   // Retención de datos: recados y mensajes más viejos que `days` se borran (ahorro de espacio).
@@ -33,6 +34,10 @@ const settingsSchema = new Schema({
   },
   // IANA TZ para el horario de Sleep (20:00–08:00). Independiente del reloj del VPS.
   timezone: { type: String, default: "America/Argentina/Buenos_Aires" },
+  // Chat "Tú": Aria responde si te escribís a tu propio número. Off en uso normal.
+  testMode: {
+    enabled: { type: Boolean, default: false },
+  },
 });
 
 module.exports = model("Settings", settingsSchema);

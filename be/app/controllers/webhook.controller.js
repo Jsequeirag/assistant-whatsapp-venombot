@@ -3,16 +3,17 @@ const contactService = require("../services/contact.service");
 const recadoService = require("../services/recado.service");
 const messageService = require("../services/message.service");
 const llmService = require("../services/llm.service");
+const incoming = require("../lib/incoming");
 
-const IGNORED_SENDERS = ["status@broadcast", "broadcast"];
-// Sufijos de chats que NO son conversaciones 1-a-1 con personas.
-const IGNORED_SUFFIXES = ["@g.us", "@broadcast", "@newsletter"];
-
-// IDs propios del bot/host. WhatsApp puede entregar NUESTROS propios mensajes con
-// formato @c.us o @lid (multi-dispositivo); juntamos todas las variantes conocidas
-// para nunca responderse a sí mismo (causaba loops + "Chat not found" en @lid).
-const SELF_IDS = new Set();
-let HOST_ID = null;
+const {
+  MEDIA_LABELS,
+  registerSelfId,
+  setHostId,
+  getMessageTimeMs,
+  getMessageText,
+  extractPhoneNumber,
+  decideTurn,
+} = incoming;
 
 // Una cola por contacto: dos mensajes seguidos no pueden saludar / clasificar en paralelo.
 const _contactQueues = new Map();
@@ -33,39 +34,13 @@ function enqueueByContact(contactId, task) {
 /** Tope de binario persistido en Mongo (BSON máx. 16 MB; dejamos holgura). */
 const MAX_MEDIA_BYTES = 3.5 * 1024 * 1024;
 
-function registerSelfId(id) {
-  if (id && typeof id === "string" && !SELF_IDS.has(id)) {
-    SELF_IDS.add(id);
-    console.log(`🤖 ID propio registrado: ${id}`);
-  }
-}
-
-function setHostId(id) {
-  HOST_ID = id;
-  registerSelfId(id);
-}
-
-/**
- * ¿El mensaje lo envió el propio bot/host? Robusto ante @c.us y @lid.
- * WhatsApp codifica "fromMe" en el id serializado ("true_<chat>_<hash>"), aunque
- * el flag de nivel superior `msg.fromMe` a veces no venga en mensajes @lid.
- * Cuando confirma que es propio, aprende el id (para filtrar también el @lid del host).
- */
-function isSelfMessage(msg) {
-  const from = msg.from || "";
-  if (msg.fromMe === true) { registerSelfId(from); return true; }
-  const serialized = typeof msg.id === "string" ? msg.id : msg.id?._serialized;
-  if (typeof serialized === "string" && serialized.startsWith("true_")) { registerSelfId(from); return true; }
-  if (msg.id && typeof msg.id === "object" && msg.id.fromMe === true) { registerSelfId(from); return true; }
-  return SELF_IDS.has(from);
-}
-
 /**
  * Envía un texto y registra el resultado. Si falla (ej. destino @lid no enviable),
  * lo deja visible en consola en vez de romper el flujo silenciosamente.
  */
 async function safeSend(client, contactId, text, label, contactName = "") {
   try {
+    incoming.rememberOutgoing(contactId, text);
     await client.sendText(contactId, text);
     // Persistir el saliente en el historial conversacional (Fase 5). No bloquea el envío.
     messageService
@@ -80,84 +55,16 @@ async function safeSend(client, contactId, text, label, contactName = "") {
 
 // Reset por inactividad: historial in-memory y "recado completo" se reinician.
 // NO toca respondedContacts de DND/Sleep: esos saludos duran hasta apagar el modo.
-const SESSION_RESET_MS = 20 * 60 * 1000; // 20 minutos
+const SESSION_RESET_MS = contactService.SESSION_IDLE_MS;
 
 // Solo procesar mensajes que llegaron después de que el bot arrancó.
 // WhatsApp Web dispara el evento de mensaje también para el historial que carga
 // al sincronizar; sin este corte, el bot respondería a mensajes de hace meses.
 const BOT_START_TIME_MS = Date.now();
 
-/**
- * Devuelve el tiempo del mensaje en ms, o null si no se puede determinar.
- * WhatsApp Web serializa el timestamp en el campo `t` (segundos).
- * Mantenemos fallback a `timestamp` por si alguna versión lo expone así.
- */
-function getMessageTimeMs(msg) {
-  const raw = typeof msg.t === "number" ? msg.t : msg.timestamp;
-  if (typeof raw !== "number" || raw <= 0) return null;
-  return raw > 1e12 ? raw : raw * 1000; // normalizar a ms
-}
-
-// Descripción legible para mensajes sin texto (medios).
-const MEDIA_LABELS = {
-  image: "(el contacto envió una imagen)",
-  sticker: "(el contacto envió un sticker)",
-  video: "(el contacto envió un video)",
-  gif: "(el contacto envió un GIF)",
-  ptt: "(el contacto envió un audio)",
-  audio: "(el contacto envió un audio)",
-  document: "(el contacto envió un documento)",
-  location: "(el contacto compartió una ubicación)",
-  vcard: "(el contacto compartió un contacto)",
-};
-
-/**
- * Texto a procesar. Para mensajes de texto usa el cuerpo; para medios usa el
- * caption o una etiqueta (NUNCA el body, que en imágenes puede traer base64).
- * Devuelve null si no hay nada procesable.
- */
-function getMessageText(msg) {
-  const isText = !msg.type || msg.type === "chat";
-  if (isText && msg.body?.trim()) return msg.body.trim();
-  if (msg.caption?.trim()) return msg.caption.trim();
-  // Solo tratamos como medio los TIPOS conocidos de medios (o isMedia explícito).
-  // Cualquier otro `type` (notification, e2e_notification, gp2, call_log, ciphertext,
-  // protocol, revoked, etc.) es un mensaje de SISTEMA, no un mensaje real → ignorar.
-  if (msg.type && MEDIA_LABELS[msg.type]) return MEDIA_LABELS[msg.type];
-  if (msg.isMedia && msg.type !== "chat") return "(el contacto envió un archivo multimedia)";
-  return null;
-}
-
-/** Teléfono real si WhatsApp lo expone; no usar el dígito de un @lid como número. */
-function extractPhoneNumber(msg, contactId) {
-  const candidates = [
-    msg.sender?.id?._serialized,
-    typeof msg.sender?.id === "string" ? msg.sender.id : null,
-    msg.sender?.wid?._serialized,
-    typeof msg.sender?.wid === "string" ? msg.sender.wid : null,
-    msg.sender?.phone,
-    msg.author,
-  ];
-  for (const c of candidates) {
-    if (typeof c === "string" && c.includes("@c.us")) {
-      const digits = c.replace(/@.+$/, "").replace(/\D/g, "");
-      if (digits) return digits;
-    }
-  }
-  if (typeof contactId === "string" && contactId.endsWith("@c.us")) {
-    const digits = contactId.replace(/@.+$/, "").replace(/\D/g, "");
-    if (digits) return digits;
-  }
-  return null;
-}
-
 async function processMessage(client, msg) {
-  const from = msg.from || "";
-  // Ignorar: grupos, listas de difusión, canales (newsletter), propios y sistema.
-  if (msg.isGroupMsg) return;
-  if (IGNORED_SUFFIXES.some((s) => from.endsWith(s))) return;
-  if (isSelfMessage(msg)) return; // propios (incluye formato @lid) → nunca responderse a sí mismo
-  if (IGNORED_SENDERS.includes(from)) return;
+  const allowSelf = modeService.isTestModeEnabled();
+  if (incoming.dropReason(msg, { allowSelf })) return;
 
   // Texto a procesar: cuerpo, caption o descripción del medio (GIF/sticker/imagen).
   // Para ptt/audio se reemplaza más abajo con la transcripción de Whisper.
@@ -178,6 +85,9 @@ async function processMessage(client, msg) {
   const contact = await contactService.getOrCreate(contactId, pushName, {
     phoneNumber: extractPhoneNumber(msg, contactId),
   });
+  contactService
+    .ensureWhatsAppAvatar(contact, client, { sender: msg.sender })
+    .catch((e) => console.warn(`⚠️  Avatar ${contactId}: ${e?.message || e}`));
 
   // ─── Descifrado de medios de WhatsApp (compartido) ────────────────────────
   // Descarga y descifra un archivo de WA usando el browser context de Puppeteer.
@@ -251,7 +161,7 @@ async function processMessage(client, msg) {
 
   // ─── Medios visuales: imagen, sticker, GIF ────────────────────────────────
   const VISUAL_TYPES = ["image", "sticker", "gif"];
-  let mediaData = undefined;
+  let mediaBuffer = undefined;
   let mediaType = undefined;
 
   if (VISUAL_TYPES.includes(msg.type)) {
@@ -260,9 +170,9 @@ async function processMessage(client, msg) {
     const result = await decryptWAMedia(mimeHint, { compress: isImgType });
     if (result) {
       if (result.buffer.length > MAX_MEDIA_BYTES) {
-        console.warn(`🖼️  [${contact.name}] ${msg.type} no se guarda en Mongo (${result.buffer.length} bytes > ${MAX_MEDIA_BYTES})`);
+        console.warn(`🖼️  [${contact.name}] ${msg.type} no se guarda (${result.buffer.length} bytes > ${MAX_MEDIA_BYTES})`);
       } else {
-        mediaData = result.buffer.toString("base64");
+        mediaBuffer = result.buffer;
         mediaType = result.mimeType;
         console.log(`🖼️  [${contact.name}] ${msg.type} descargado (${result.buffer.length} bytes)`);
       }
@@ -307,149 +217,173 @@ async function processMessage(client, msg) {
 
   console.log(`💬 [${new Date().toLocaleTimeString("es")}] ${contact.name} <${contactId}>: ${messageText.slice(0, 80)}`);
 
-  // ─── Reset por inactividad (>20 min) → historial fresco, sin re-saludar DND/Sleep
+  // Sesión LLM: hidratar desde Mongo si el proceso reinició; reset si >20 min idle.
+  // NO toca respondedContacts de DND/Sleep.
+  await contactService.ensureSession(contactId, SESSION_RESET_MS);
   if (contactService.isSessionExpired(contactId, SESSION_RESET_MS)) {
     contactService.resetSession(contactId);
     console.log(`🔄 Sesión reiniciada para ${contact.name} (>20 min sin actividad)`);
   }
   contactService.touchSession(contactId);
 
-  // ─── Clasificar si es recado (en todos los casos) ──────────────────────────
-  // Etiquetas genéricas de medio no son recado: no gastar un turno de Groq.
   const skipClassify = messageText.startsWith("(el contacto envió");
-  const { isRecado, summary, priority } = skipClassify
-    ? { isRecado: false, summary: null, priority: "baja" }
-    : await llmService
-        .classifyRecado(contact.name, contactService.getSession(contactId).conversationHistory, messageText)
-        .catch(() => ({ isRecado: false, summary: null, priority: "baja" }));
-
-  // Persistir el mensaje entrante con su clasificación IA. No bloquea el flujo.
-  messageService
-    .save({
-      contactId,
-      contactName: contact.name,
-      role: "user",
-      content: messageText,
-      isTranscribed: wasTranscribed || undefined,
-      mediaData: mediaData || undefined,
-      mediaType: mediaType || undefined,
-      aiClassification: { isRecado, summary: summary || undefined, priority: priority || undefined },
-    })
-    .catch((e) => console.error(`⚠️  No se pudo persistir mensaje entrante: ${e?.message || e}`));
-
-  if (isRecado) {
-    await recadoService.save({
-      contactId,
-      contactName: contact.name,
-      content: summary || messageText,
-      originalContent: messageText,
-      priority,
-    });
-    console.log(`📩 Recado [${priority}] de ${contact.name}: ${(summary || messageText).slice(0, 60)}`);
-  }
+  const session = contactService.getSession(contactId);
 
   const settings = await modeService.getSettings();
   const { ownerName, assistantName } = settings.identity;
-
-  // Estado de presencia (DND > Sleep > disponible).
-  const { status, reason: statusReason } = await modeService.getPresence();
-  const globalAssist = settings.autoAssist.globalEnabled;
+  const selfTestTurn = allowSelf && incoming.isHostChat(contactId);
+  const { status, reason: statusReason } = selfTestTurn
+    ? { status: "available", reason: "" }
+    : await modeService.getPresence();
+  const globalAssist = selfTestTurn ? true : settings.autoAssist.globalEnabled;
+  if (selfTestTurn) {
+    console.log("🧪 Turno de prueba (chat con vos mismo) — se responde aunque auto-asistir esté off");
+  }
+  const alreadyGreeted =
+    status === "dnd" || status === "sleep"
+      ? await modeService.hasResponded(status, contactId)
+      : session.greetedOnce;
+  const { greetingTracked, willGreet, silence } = decideTurn({
+    status,
+    globalAssist,
+    alreadyGreeted,
+    recadoCompleted: contactService.isRecadoCompleted(contactId),
+  });
 
   console.log(`   ↳ status=${status} | global=${globalAssist}`);
 
-  // ─── Estado de sesión y saludo ────────────────────────────────────────────
-  // Se calcula antes del filtro de contenido para saber si es primera interacción.
-  const session = contactService.getSession(contactId);
-  const greetingTracked = status === "dnd" || status === "sleep";
-  const alreadyGreeted = greetingTracked
-    ? await modeService.hasResponded(status, contactId)
-    : session.greetedOnce;
+  const persistIncoming = async ({ isRecado, summary, priority }) => {
+    messageService
+      .save({
+        contactId,
+        contactName: contact.name,
+        role: "user",
+        content: messageText,
+        isTranscribed: wasTranscribed || undefined,
+        mediaBuffer: mediaBuffer || undefined,
+        mediaType: mediaType || undefined,
+        aiClassification: { isRecado, summary: summary || undefined, priority: priority || undefined },
+      })
+      .catch((e) => console.error(`⚠️  No se pudo persistir mensaje entrante: ${e?.message || e}`));
+    if (isRecado) {
+      await recadoService.save({
+        contactId,
+        contactName: contact.name,
+        content: summary || messageText,
+        originalContent: messageText,
+        priority,
+      });
+      console.log(`📩 Recado [${priority}] de ${contact.name}: ${(summary || messageText).slice(0, 60)}`);
+    }
+  };
 
-  // ─── ¿El bot debe responder? ───────────────────────────────────────────────
-  // Responde si hay presencia activa (DND/Sleep) o si el asistente global está ON.
-  // Disponible + asistente global OFF = silencio total (solo se clasificó el recado).
-  if (status === "available" && !globalAssist) {
-    console.log(`   ↳ silencio: disponible y asistente global OFF`);
-    return;
-  }
+  const emptyCls = { isRecado: false, summary: null, priority: "baja" };
 
-  // ─── Filtro de contenido inapropiado (solo si vamos a hablar) ─────────────
-  const { appropriate, type: contentType } = skipClassify
-    ? { appropriate: true, type: null }
-    : await llmService.classifyContent(messageText).catch(() => ({ appropriate: true, type: null }));
+  const rateLimited = (e) => e?.code === "LLM_RATE_LIMIT";
 
-  if (!appropriate) {
-    console.log(`🚫 Contenido inapropiado bloqueado de ${contact.name}: [${contentType}]`);
-    if (globalAssist) {
-      let response;
-      if (!alreadyGreeted) {
-        // Primera interacción: presentarse + decline en un solo mensaje natural.
-        const prompt = `Eres ${assistantName}, asistente personal de ${ownerName}.
-Es el PRIMER mensaje de esta persona y contiene contenido inapropiado que no podés manejar.
-En UN solo mensaje: presentate brevemente de forma natural y decliná el contenido sin sonar a robot ni a sistema automático.
-Si querés, invitá a dejar un recado. Tono cálido y breve. Mismo idioma que la persona. Sin emojis forzados.
-Mensaje recibido: "${messageText.slice(0, 200)}"`;
-        response = await llmService
-          .generateResponse(prompt, [], messageText, { temperature: 0.7 })
-          .catch(() => `Hola, soy ${assistantName}! Ese tipo de contenido no puedo manejarlo, pero si querés dejarle algo a ${ownerName}, con gusto lo tomo.`);
-        const sent = await safeSend(client, contactId, response, "decline-greeting", contact.name);
-        if (sent) {
-          if (greetingTracked) await modeService.markResponded(status, contactId);
-          session.greetedOnce = true;
-        }
+  // ─── Silencio: 0–1 llamada (solo clasificar recado). No filtro ni reply. ───
+  if (silence) {
+    try {
+      const cls = skipClassify
+        ? emptyCls
+        : await llmService.classifyRecado(contact.name, session.conversationHistory, messageText, { contactId });
+      await persistIncoming(cls);
+    } catch (e) {
+      if (rateLimited(e)) {
+        console.warn(`⏱️  Rate limit LLM — se omite clasificar a ${contact.name}`);
+        await persistIncoming(emptyCls);
       } else {
-        // Ya saludó antes: decline natural sin presentarse de nuevo.
-        const prompt = `Eres ${assistantName}, el asistente personal de ${ownerName}.
-La persona acaba de enviar un mensaje con contenido inapropiado que no podés manejar.
-Respondé de forma MUY breve, natural y humana: sin frases robóticas, sin presentarte de nuevo, sin sonar a sistema automático.
-Podés redirigir sutilmente a dejar un recado si querés, pero no es obligatorio.
-Usá el mismo idioma y tono que usa la persona. Máximo 1-2 oraciones. Sin emojis forzados.
-Mensaje recibido: "${messageText.slice(0, 200)}"`;
-        response = await llmService
-          .generateResponse(prompt, [], messageText, { temperature: 0.7 })
-          .catch(() => `Ese tema se escapa de lo que puedo ayudarte 😅 Si querés dejarle algo a ${ownerName}, con gusto lo tomo.`);
-        await safeSend(client, contactId, response, "decline", contact.name);
+        await persistIncoming(emptyCls);
       }
     }
+    if (status === "available" && !globalAssist) console.log(`   ↳ silencio: disponible y asistente global OFF`);
+    else if (!globalAssist) console.log(`   ↳ silencio: ya saludado, sin auto-asistir`);
+    else console.log(`   ↳ silencio: recado ya completado (se reinicia tras 20 min)`);
     return;
   }
 
-  // ─── Primer mensaje DND/Sleep: un saludo por modo (hasta que se apague) ────
-  // "disponible" + auto-asistir NO pasa por acá: el primer turno lo atiende
-  // auto-asistir, sin afirmar que el dueño está ausente.
+  const declineFallback = alreadyGreeted
+    ? `Ese tema se escapa de lo que puedo ayudarte 😅 Si querés dejarle algo a ${ownerName}, con gusto lo tomo.`
+    : `Hola, soy ${assistantName}! Ese tipo de contenido no puedo manejarlo, pero si querés dejarle algo a ${ownerName}, con gusto lo tomo.`;
 
-  if (greetingTracked && !alreadyGreeted) {
+  const sendDecline = async (text) => {
+    const sent = await safeSend(client, contactId, text, alreadyGreeted ? "decline" : "decline-greeting", contact.name);
+    if (sent && !alreadyGreeted) {
+      if (greetingTracked) await modeService.markResponded(status, contactId);
+      session.greetedOnce = true;
+    }
+  };
+
+  // ─── Saludo DND/Sleep (un mensaje por modo). 0–1 llamada. ─────────────────
+  if (willGreet) {
     const greetText = isVisualMediaOnly
       ? `el contacto acaba de enviarte ${msg.type === "image" ? "una imagen" : msg.type === "sticker" ? "un sticker" : "un GIF"} sin texto adicional — saludalo brevemente y ofrecete a tomar un recado si lo necesita`
       : messageText;
-    const greeting = await generateModeResponse(status, ownerName, assistantName, statusReason, greetText);
-    const sent = await safeSend(client, contactId, greeting, `saludo:${status}`, contact.name);
-    if (!sent) return; // si no se pudo enviar, no marcamos como saludado (reintenta luego)
-    await modeService.markResponded(status, contactId);
-    session.greetedOnce = true;
-    if (globalAssist) {
-      contactService.addToHistory(contactId, "user", messageText);
-      contactService.addToHistory(contactId, "model", greeting);
+    const canned = !statusReason || !statusReason.trim();
+
+    let saved = false;
+    try {
+      if (canned) {
+        const cls = skipClassify
+          ? { ...emptyCls, appropriate: true }
+          : await llmService.classifyIncoming(contact.name, session.conversationHistory, messageText, { contactId });
+        await persistIncoming(cls);
+        saved = true;
+        if (cls.appropriate === false) {
+          console.log(`🚫 Contenido inapropiado bloqueado de ${contact.name}: [${cls.contentType}]`);
+          if (globalAssist) await sendDecline(cls.declineReply || declineFallback);
+          return;
+        }
+        const greeting = defaultModeMessage(status, ownerName, assistantName);
+        const sent = await safeSend(client, contactId, greeting, `saludo:${status}`, contact.name);
+        if (!sent) return;
+        await modeService.markResponded(status, contactId);
+        session.greetedOnce = true;
+        if (globalAssist) {
+          contactService.addToHistory(contactId, "user", messageText);
+          contactService.addToHistory(contactId, "model", greeting);
+        }
+        console.log(`👋 Saludo [${status}] a ${contact.name}`);
+        return;
+      }
+
+      const turn = await llmService.replyTurn({
+        contactName: contact.name,
+        history: [],
+        newMessage: greetText,
+        replyInstructions: buildGreetingInstructions(status, ownerName, assistantName, statusReason, greetText),
+        contactId,
+        wantCompleted: false,
+        skipClassify,
+        temperature: 0.6,
+      });
+      await persistIncoming(turn);
+      saved = true;
+      if (turn.appropriate === false) {
+        console.log(`🚫 Contenido inapropiado bloqueado de ${contact.name}: [${turn.contentType}]`);
+        if (globalAssist) await sendDecline(turn.reply || declineFallback);
+        return;
+      }
+      const greeting = turn.reply || defaultModeMessage(status, ownerName, assistantName);
+      const sent = await safeSend(client, contactId, greeting, `saludo:${status}`, contact.name);
+      if (!sent) return;
+      await modeService.markResponded(status, contactId);
+      session.greetedOnce = true;
+      if (globalAssist) {
+        contactService.addToHistory(contactId, "user", messageText);
+        contactService.addToHistory(contactId, "model", greeting);
+      }
+      console.log(`👋 Saludo [${status}] a ${contact.name}`);
+    } catch (e) {
+      if (rateLimited(e)) console.warn(`⏱️  Rate limit LLM — sin saludo a ${contact.name}`);
+      else console.error(`⚠️  Error en saludo [${status}] a ${contact.name}:`, e?.message || e);
+      if (!saved) await persistIncoming(emptyCls);
     }
-    console.log(`👋 Saludo [${status}] a ${contact.name}`);
     return;
   }
 
-  // ─── Sin auto-asistir: silencio (DND/Sleep ya saludó, o no hay nada que decir)
-  if (!globalAssist) {
-    console.log(`   ↳ silencio: ya saludado, sin auto-asistir`);
-    return;
-  }
-  if (contactService.isRecadoCompleted(contactId)) {
-    console.log(`   ↳ silencio: recado ya completado (se reinicia tras 20 min)`);
-    return;
-  }
-
-  // ─── Auto-asistir: seguir la conversación ──────────────────────────────────
-  // available + sesión nueva → presentarse. DND/Sleep ya saludó (también tras el reset de 20 min).
+  // ─── Auto-asistir: 1 llamada (clasificar + responder + recado completo) ────
   const isFirstAssist = !alreadyGreeted;
-  contactService.addToHistory(contactId, "user", messageText);
-
   const mediaDesc = msg.type === "image" ? "una imagen" : msg.type === "sticker" ? "un sticker" : "un GIF";
   const visualPrompt = `Eres ${assistantName}, asistente de ${ownerName}. El contacto acaba de enviar ${mediaDesc}.
 No podés ver el contenido. Respondé con UN mensaje muy breve y natural reconociendo el envío.
@@ -458,28 +392,45 @@ NO digas que ${ownerName} está ausente o no disponible.
 ${isFirstAssist ? `Presentate muy breve como ${assistantName}, el asistente de ${ownerName}. ` : ""}Ejemplos de tono: "Recibido 👍", "Perfecto, se lo hago saber a ${ownerName}.", "Anotado."
 Sé natural y conciso. Mismo idioma que el contacto.`;
 
-  const response = await llmService
-    .generateResponse(
-      isVisualMediaOnly ? visualPrompt : buildAutoAssistPrompt(ownerName, assistantName, isFirstAssist),
-      isVisualMediaOnly ? [] : session.conversationHistory.slice(0, -1),
-      messageText
-    )
-    .catch(() => null);
+  let saved = false;
+  try {
+    const turn = await llmService.replyTurn({
+      contactName: contact.name,
+      history: isVisualMediaOnly ? [] : session.conversationHistory,
+      newMessage: messageText,
+      replyInstructions: isVisualMediaOnly
+        ? visualPrompt
+        : buildAutoAssistPrompt(ownerName, assistantName, isFirstAssist),
+      contactId,
+      wantCompleted: !isVisualMediaOnly && session.conversationHistory.length >= 2,
+      skipClassify: skipClassify || isVisualMediaOnly,
+      temperature: 0.6,
+    });
+    await persistIncoming(turn);
+    saved = true;
 
-  if (response) {
-    await safeSend(client, contactId, response, "auto-assist", contact.name);
-    contactService.addToHistory(contactId, "model", response);
-    session.greetedOnce = true;
-    console.log(`🤖 Auto-asistir: respondí a ${contact.name}`);
-  }
+    if (turn.appropriate === false) {
+      console.log(`🚫 Contenido inapropiado bloqueado de ${contact.name}: [${turn.contentType}]`);
+      if (globalAssist) await sendDecline(turn.reply || declineFallback);
+      return;
+    }
 
-  const completed = await llmService
-    .detectRecadoCompleted(session.conversationHistory)
-    .catch(() => false);
+    if (turn.reply) {
+      await safeSend(client, contactId, turn.reply, "auto-assist", contact.name);
+      contactService.addToHistory(contactId, "user", messageText);
+      contactService.addToHistory(contactId, "model", turn.reply);
+      session.greetedOnce = true;
+      console.log(`🤖 Auto-asistir: respondí a ${contact.name}`);
+    }
 
-  if (completed) {
-    contactService.markRecadoCompleted(contactId);
-    console.log(`✅ Recado completo detectado para ${contact.name}`);
+    if (turn.recadoCompleted) {
+      contactService.markRecadoCompleted(contactId);
+      console.log(`✅ Recado completo detectado para ${contact.name}`);
+    }
+  } catch (e) {
+    if (rateLimited(e)) console.warn(`⏱️  Rate limit LLM — sin auto-asistir a ${contact.name}`);
+    else console.error(`⚠️  Error en auto-asistir a ${contact.name}:`, e?.message || e);
+    if (!saved) await persistIncoming(emptyCls);
   }
 }
 
@@ -500,13 +451,7 @@ function defaultModeMessage(mode, ownerName, assistantName) {
   return `${intro} En este momento ${ownerName} no se encuentra disponible. ¿Deseas dejarle un recado? Con gusto se lo haré llegar. 📝`;
 }
 
-async function generateModeResponse(mode, ownerName, assistantName, reason, messageText) {
-  // Sin motivo/contexto → respuesta default fija (consistente, sin IA)
-  if (!reason || !reason.trim()) {
-    return defaultModeMessage(mode, ownerName, assistantName);
-  }
-
-  // Con motivo/contexto → la IA adapta el mensaje a ese motivo
+function buildGreetingInstructions(mode, ownerName, assistantName, reason, messageText) {
   const modeContext = {
     dnd: `El motivo de ausencia de ${ownerName} es: "${reason}".
 IMPORTANTE: NO copies el motivo textualmente. Interpretalo y redactalo en tercera persona de forma natural y empática.
@@ -521,7 +466,7 @@ IMPORTANTE: NO copies el contexto textualmente. Interpretalo y redactalo en terc
 Mencioná que verá el mensaje mañana a partir de las 8:00 am.`,
   };
 
-  const systemPrompt = `Eres ${assistantName}, el asistente personal de ${ownerName}.
+  return `Eres ${assistantName}, el asistente personal de ${ownerName}.
 Generá UN mensaje de WhatsApp de bienvenida para alguien que le escribió a ${ownerName}.
 
 Situación: ${modeContext[mode]}
@@ -546,15 +491,7 @@ Si la persona pregunta directamente si sos un bot, una IA o una persona real: NO
 y NO te declares un bot/IA; respondé con naturalidad que sos ${assistantName}, quien ayuda a
 ${ownerName} con sus mensajes, y seguí con lo que necesita.
 
-Mensaje recibido (respondé relacionado a su contenido): "${messageText.slice(0, 300)}"
-Respondé ÚNICAMENTE con el mensaje, sin comillas ni prefijos.`;
-
-  try {
-    // Temperatura media → variedad natural en el fraseo (evita plantilla repetida)
-    return await llmService.generateResponse(systemPrompt, [], messageText, { temperature: 0.6 });
-  } catch {
-    return defaultModeMessage(mode, ownerName, assistantName);
-  }
+Mensaje recibido (respondé relacionado a su contenido): "${(messageText || "").slice(0, 300)}"`;
 }
 
 function buildAutoAssistPrompt(ownerName, assistantName, isFirstMessage = false) {

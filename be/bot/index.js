@@ -23,7 +23,7 @@ async function main() {
     console.log(`   ${icon} ${c.service}: ${c.status} (${c.latencyMs}ms) ${c.message}`);
   }
   if (checks.some((c) => c.service === "groq" && c.status === "error")) {
-    console.warn("⚠️  Groq no respondió al 'hola' de prueba. El bot arrancará igual, pero la IA podría no responder.");
+    console.warn("⚠️  El proveedor de IA no respondió al 'hola' de prueba. El bot arrancará igual, pero podría no responder.");
   }
 
   // Scheduler: revalida los servicios cada 24 horas.

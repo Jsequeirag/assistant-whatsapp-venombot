@@ -7,6 +7,7 @@ dist/
 node_modules/
 session
 tokens/
+media/
 .chromium/
 bot/state.json
 package-lock.json

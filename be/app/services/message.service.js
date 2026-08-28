@@ -1,23 +1,55 @@
 const Message = require("../models/Message");
+const mediaService = require("./media.service");
 
-const MAX_MEDIA_B64 = 5 * 1024 * 1024;
+function toClient(doc) {
+  const o = doc && doc.toObject ? doc.toObject() : { ...(doc || {}) };
+  const hasMedia = Boolean(o.mediaPath || o.mediaType);
+  delete o.mediaData;
+  delete o.mediaPath;
+  if (hasMedia && o._id) o.mediaUrl = `/api/media/${o._id}`;
+  return o;
+}
 
-/** Guarda un turno de la conversación (entrante o saliente). Nunca rompe el flujo del bot. */
-async function save({ contactId, contactName, role, content, via, aiClassification, isTranscribed, mediaData, mediaType }) {
-  let media = mediaData;
+/** Guarda un turno. El binario va a disco (`mediaPath`); Mongo no guarda Base64. */
+async function save({ contactId, contactName, role, content, via, aiClassification, isTranscribed, mediaData, mediaBuffer, mediaType }) {
+  let buf = mediaBuffer;
+  if (!buf && mediaData) {
+    try {
+      buf = Buffer.from(mediaData, "base64");
+    } catch {
+      buf = null;
+    }
+  }
+  let mediaPath;
   let type = mediaType;
-  if (media && media.length > MAX_MEDIA_B64) {
-    console.warn(`⚠️  mediaData omitido (${media.length} chars) para ${contactId}`);
-    media = undefined;
+  if (buf && type) {
+    mediaPath = await mediaService.saveBuffer(buf, type);
+    if (!mediaPath) type = undefined;
+  } else {
     type = undefined;
   }
-  return Message.create({ contactId, contactName, role, content, via, aiClassification, isTranscribed, mediaData: media, mediaType: type });
+  const doc = await Message.create({
+    contactId,
+    contactName,
+    role,
+    content,
+    via,
+    aiClassification,
+    isTranscribed,
+    mediaPath,
+    mediaType: type,
+  });
+  return toClient(doc);
 }
 
 /** Devuelve los últimos `limit` mensajes, en orden cronológico (más antiguo primero). */
 async function getByContact(contactId, { limit = 200 } = {}) {
-  const rows = await Message.find({ contactId }).sort({ createdAt: -1 }).limit(limit).lean();
-  return rows.reverse();
+  const rows = await Message.find({ contactId })
+    .select("-mediaData")
+    .sort({ createdAt: -1 })
+    .limit(limit)
+    .lean();
+  return rows.reverse().map(toClient);
 }
 
 /**
@@ -27,6 +59,7 @@ async function getByContact(contactId, { limit = 200 } = {}) {
 async function getContactsSummary() {
   const rows = await Message.aggregate([
     { $match: { role: "user" } },
+    { $project: { contactId: 1, contactName: 1, content: 1, createdAt: 1 } },
     { $sort: { createdAt: -1 } },
     {
       $group: {
@@ -61,4 +94,4 @@ async function getContactsSummary() {
   }));
 }
 
-module.exports = { save, getByContact, getContactsSummary };
+module.exports = { save, getByContact, getContactsSummary, toClient };

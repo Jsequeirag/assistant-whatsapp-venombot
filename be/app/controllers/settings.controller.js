@@ -68,4 +68,12 @@ async function updateRetention(req, res) {
   res.json(settings.retention);
 }
 
-module.exports = { get, updateDnd, updateSleep, updateAutoAssist, updateIdentity, updateGroq, listGroqModels, updateRetention };
+async function updateTestMode(req, res) {
+  const enabled = req.body?.enabled;
+  if (typeof enabled !== "boolean") return res.status(400).json({ error: "enabled (boolean) requerido" });
+  await modeService.updateTestMode({ enabled });
+  const settings = await modeService.getSettings();
+  res.json(settings.testMode);
+}
+
+module.exports = { get, updateDnd, updateSleep, updateAutoAssist, updateIdentity, updateGroq, listGroqModels, updateRetention, updateTestMode };

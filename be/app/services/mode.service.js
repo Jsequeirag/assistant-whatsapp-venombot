@@ -34,10 +34,21 @@ function isInSleepHours(timeZone) {
   return h >= SLEEP_START || h < SLEEP_END;
 }
 
+let testModeEnabled = false;
+
 async function getOrCreateSettings() {
   let s = await Settings.findOne();
   if (!s) s = await Settings.create({});
+  const next = !!s.testMode?.enabled;
+  if (next && !testModeEnabled) {
+    console.warn("🧪 Ambiente de pruebas activo — Aria responde en el chat con vos mismo.");
+  }
+  testModeEnabled = next;
   return s;
+}
+
+function isTestModeEnabled() {
+  return testModeEnabled;
 }
 
 /**
@@ -96,6 +107,7 @@ async function getSettings() {
     },
     retention: { days: s.retention?.days ?? 30 },
     timezone: normalizeTimeZone(s.timezone) || DEFAULT_TZ,
+    testMode: { enabled: !!s.testMode?.enabled },
   };
 }
 
@@ -168,6 +180,18 @@ async function updateRetention({ days }) {
   await Settings.updateOne({}, { $set: { "retention.days": n } });
 }
 
+async function updateTestMode({ enabled }) {
+  if (enabled === undefined) return;
+  await getOrCreateSettings();
+  testModeEnabled = !!enabled;
+  await Settings.updateOne({}, { $set: { "testMode.enabled": testModeEnabled } });
+  if (testModeEnabled) {
+    console.warn("🧪 Ambiente de pruebas ON — escribite a vos mismo en WhatsApp y Aria responde.");
+  } else {
+    console.log("🧪 Ambiente de pruebas OFF");
+  }
+}
+
 /** Días de retención configurados (0 = deshabilitado). */
 async function getRetentionDays() {
   const s = await getOrCreateSettings();
@@ -187,6 +211,8 @@ module.exports = {
   updateAutoAssist,
   updateIdentity,
   updateRetention,
+  updateTestMode,
+  isTestModeEnabled,
   getRetentionDays,
   normalizeTimeZone,
 };

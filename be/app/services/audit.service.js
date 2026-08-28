@@ -54,7 +54,7 @@ function checkMongo(phase = "manual") {
   });
 }
 
-/** Verifica Groq enviando un "hola" y esperando respuesta del modelo. */
+/** Verifica el LLM (contrato OpenAI) enviando un "hola". */
 async function checkGroq(phase = "manual") {
   const t = Date.now();
   try {
