@@ -1,26 +1,7 @@
 import { useState, useEffect } from "react";
 import { api } from "../api/client";
 import { Pencil, Trash2 } from "lucide-react";
-
-function Avatar({ url, name, size = 40 }) {
-  const initial = (name || "?").charAt(0).toUpperCase();
-  return url ? (
-    <img
-      src={url}
-      alt=""
-      loading="lazy"
-      className="ds-avatar-circle"
-      style={{ width: size, height: size, flexShrink: 0 }}
-    />
-  ) : (
-    <div
-      className="ds-avatar-circle ds-avatar-initial"
-      style={{ width: size, height: size, flexShrink: 0 }}
-    >
-      {initial}
-    </div>
-  );
-}
+import Avatar from "../components/Avatar";
 
 
 export default function Contacts() {
@@ -32,6 +13,7 @@ export default function Contacts() {
   const [formError, setFormError] = useState("");
   const [editingId, setEditingId] = useState(null);
   const [editName, setEditName] = useState("");
+  const [actionError, setActionError] = useState(null);
 
   const load = async () => {
     setLoading(true);
@@ -59,21 +41,31 @@ export default function Contacts() {
       });
       setForm({ name: "", number: "" });
       setShowForm(false);
-    } catch {
-      setFormError("No se pudo crear el contacto.");
+    } catch (err) {
+      setFormError(err?.message || "No se pudo crear el contacto.");
     }
   };
 
   const handleDelete = async (c) => {
     if (!confirm(`¿Eliminar a ${c.name || c.number}?`)) return;
-    await api.deleteContact(c.contactId);
-    setContacts((prev) => prev.filter((x) => x.contactId !== c.contactId));
+    try {
+      await api.deleteContact(c.contactId);
+      setActionError(null);
+      setContacts((prev) => prev.filter((x) => x.contactId !== c.contactId));
+    } catch (err) {
+      setActionError(err?.message || "No se pudo eliminar el contacto.");
+    }
   };
 
   const handleEditSave = async (c) => {
-    const updated = await api.updateContact(c.contactId, { name: editName });
-    setContacts((prev) => prev.map((x) => x.contactId === c.contactId ? updated : x));
-    setEditingId(null);
+    try {
+      const updated = await api.updateContact(c.contactId, { name: editName });
+      setActionError(null);
+      setContacts((prev) => prev.map((x) => x.contactId === c.contactId ? updated : x));
+      setEditingId(null);
+    } catch (err) {
+      setActionError(err?.message || "No se pudo guardar el nombre.");
+    }
   };
 
   return (
@@ -103,6 +95,11 @@ export default function Contacts() {
           {showForm ? "Cancelar" : "+ Nuevo"}
         </button>
       </div>
+      {actionError && (
+        <p style={{ fontFamily: "var(--ds-font-body)", fontWeight: "var(--ds-fw-regular)", fontSize: "var(--ds-fs-xs)", letterSpacing: "var(--ds-ls-caps)", textTransform: "uppercase", color: "#ef4444", marginBottom: "var(--ds-space-3)" }}>
+          {actionError}
+        </p>
+      )}
 
       {showForm && (
         <form onSubmit={handleCreate} style={{ border: "1px solid var(--ds-border)", padding: "var(--ds-space-4)", marginBottom: "var(--ds-space-3)", display: "flex", flexDirection: "column", gap: "var(--ds-space-3)" }}>

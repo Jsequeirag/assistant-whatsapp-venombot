@@ -6,8 +6,20 @@ async function request(method, path, body) {
     headers: body !== undefined ? { "Content-Type": "application/json" } : {},
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
-  if (!res.ok) throw new Error(`${method} ${path} → ${res.status}`);
-  return res.json();
+  const text = await res.text();
+  let data = null;
+  if (text) {
+    try {
+      data = JSON.parse(text);
+    } catch {
+      data = null;
+    }
+  }
+  if (!res.ok) {
+    const msg = (data && (data.error || data.message)) || `${method} ${path} → ${res.status}`;
+    throw new Error(msg);
+  }
+  return data;
 }
 
 export const api = {
@@ -18,7 +30,7 @@ export const api = {
   // Settings
   getSettings: () => request("GET", "/settings"),
   updateDnd: ({ active, reason }) => request("PATCH", "/settings/dnd", { active, reason }),
-  updateSleep: ({ active, reason }) => request("PATCH", "/settings/sleep", { active, reason }),
+  updateSleep: ({ active, reason, timezone }) => request("PATCH", "/settings/sleep", { active, reason, timezone }),
   updateAutoAssist: (data) => request("PATCH", "/settings/auto-assist", data),
   updateIdentity: (data) => request("PATCH", "/settings/identity", data),
   updateGroq: (data) => request("PATCH", "/settings/groq", data),

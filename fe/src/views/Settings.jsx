@@ -40,6 +40,20 @@ function Field({ label, hint, children }) {
   );
 }
 
+const TIMEZONES = [
+  "America/Argentina/Buenos_Aires",
+  "America/Argentina/Cordoba",
+  "America/Montevideo",
+  "America/Santiago",
+  "America/Sao_Paulo",
+  "America/Bogota",
+  "America/Lima",
+  "America/Mexico_City",
+  "America/New_York",
+  "Europe/Madrid",
+  "UTC",
+];
+
 function SaveButton({ onClick, saved }) {
   return (
     <button
@@ -70,37 +84,89 @@ export default function Settings() {
   const [identity, setIdentity] = useState({ ownerName: "", assistantName: "" });
   const [dnd, setDnd] = useState({ active: false, reason: "" });
   const [sleep, setSleep] = useState({ active: false });
+  const [timezone, setTimezone] = useState("America/Argentina/Buenos_Aires");
   const [autoAssist, setAutoAssist] = useState({ globalEnabled: false, reason: "" });
   const [retention, setRetention] = useState({ days: 30 });
   const [saved, setSaved] = useState(null);
+  const [saveError, setSaveError] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(null);
 
-  useEffect(() => {
-    api.getSettings().then((s) => {
-      setIdentity(s.identity);
-      setDnd(s.dnd);
-      setSleep(s.sleep);
-      setAutoAssist(s.autoAssist);
-      if (s.retention) setRetention(s.retention);
-      setLoading(false);
-    });
-  }, []);
+  const loadSettings = () => {
+    setLoading(true);
+    setLoadError(null);
+    api.getSettings()
+      .then((s) => {
+        setIdentity(s.identity);
+        setDnd(s.dnd);
+        setSleep(s.sleep);
+        if (s.timezone) setTimezone(s.timezone);
+        setAutoAssist(s.autoAssist);
+        if (s.retention) setRetention(s.retention);
+      })
+      .catch(() => setLoadError("No se pudo cargar la configuración."))
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => { loadSettings(); }, []);
 
   const notify = (key) => {
+    setSaveError(null);
     setSaved(key);
     setTimeout(() => setSaved(null), 2000);
   };
 
-  const saveIdentity = async () => { await api.updateIdentity(identity); notify("identity"); };
-  const saveDnd = async () => { await api.updateDnd(dnd); notify("dnd"); };
-  const saveSleep = async () => { await api.updateSleep(sleep); notify("sleep"); };
-  const saveAutoAssist = async () => { await api.updateAutoAssist(autoAssist); notify("autoAssist"); };
-  const saveRetention = async () => { const r = await api.updateRetention(retention.days); setRetention(r); notify("retention"); };
+  const persist = async (key, fn) => {
+    setSaveError(null);
+    try {
+      await fn();
+      notify(key);
+    } catch (err) {
+      setSaveError(err?.message || "No se pudo guardar. Revisá que el API esté disponible.");
+    }
+  };
+
+  const saveIdentity = () => persist("identity", () => api.updateIdentity(identity));
+  const saveDnd = () => persist("dnd", () => api.updateDnd(dnd));
+  const saveSleep = () => persist("sleep", () => api.updateSleep({ ...sleep, timezone }));
+  const saveAutoAssist = () => persist("autoAssist", () => api.updateAutoAssist(autoAssist));
+  const saveRetention = () => persist("retention", async () => {
+    const r = await api.updateRetention(retention.days);
+    setRetention(r);
+  });
 
   if (loading) return (
     <p style={{ textAlign: "center", color: "var(--ds-text-faint)", padding: "var(--ds-space-12) 0", fontFamily: "var(--ds-font-body)", fontWeight: "var(--ds-fw-regular)", fontSize: "var(--ds-fs-xs)", letterSpacing: "var(--ds-ls-caps)", textTransform: "uppercase" }}>
       Cargando...
     </p>
+  );
+
+  if (loadError) return (
+    <div style={{ textAlign: "center", padding: "var(--ds-space-12) 0" }}>
+      <p style={{ fontFamily: "var(--ds-font-body)", fontWeight: "var(--ds-fw-regular)", fontSize: "var(--ds-fs-xs)", letterSpacing: "var(--ds-ls-caps)", textTransform: "uppercase", color: "var(--ds-text-faint)" }}>
+        {loadError}
+      </p>
+      <button
+        type="button"
+        onClick={loadSettings}
+        className="ds-btn-primary"
+        style={{
+          marginTop: "var(--ds-space-4)",
+          fontFamily: "var(--ds-font-body)",
+          fontWeight: "var(--ds-fw-medium)",
+          fontSize: "var(--ds-fs-xs)",
+          letterSpacing: "var(--ds-ls-caps)",
+          textTransform: "uppercase",
+          padding: "var(--ds-space-2) var(--ds-space-4)",
+          background: "var(--ds-accent)",
+          color: "#fff",
+          border: "none",
+          cursor: "pointer",
+        }}
+      >
+        Reintentar
+      </button>
+    </div>
   );
 
   const preview = `"Hola, soy ${identity.assistantName || "Ari"}, el asistente virtual de ${identity.ownerName || "el usuario"}."`;
@@ -110,6 +176,11 @@ export default function Settings() {
       <h1 className="ds-display" style={{ fontSize: "var(--ds-fs-sm)", color: "var(--ds-text-strong)", marginBottom: "var(--ds-space-4)" }}>
         Configuración
       </h1>
+      {saveError && (
+        <p style={{ fontFamily: "var(--ds-font-body)", fontWeight: "var(--ds-fw-regular)", fontSize: "var(--ds-fs-xs)", letterSpacing: "var(--ds-ls-caps)", textTransform: "uppercase", color: "#ef4444", marginBottom: "var(--ds-space-2)" }}>
+          {saveError}
+        </p>
+      )}
 
       {/* Identidad */}
       <Card title="Identidad del asistente">
@@ -170,6 +241,24 @@ export default function Settings() {
           onChange={(v) => setSleep({ ...sleep, active: v })}
           label={sleep.active ? "Activo" : "Inactivo"}
         />
+        <Field
+          label="Zona horaria"
+          hint="El rango 20:00–08:00 se calcula en esta zona, no en la del servidor."
+        >
+          <div className="t-input">
+            <select
+              value={timezone}
+              onChange={(e) => setTimezone(e.target.value)}
+            >
+              {TIMEZONES.map((tz) => (
+                <option key={tz} value={tz}>{tz.replace(/_/g, " ")}</option>
+              ))}
+              {!TIMEZONES.includes(timezone) && (
+                <option value={timezone}>{timezone}</option>
+              )}
+            </select>
+          </div>
+        </Field>
         <Field
           label="Motivo / contexto"
           hint="La IA adapta el mensaje según esto. Si está vacío, usará 'descansando'."

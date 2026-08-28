@@ -2,27 +2,11 @@ import { useState, useEffect, useRef } from "react";
 import { api } from "../api/client";
 import AriaBadge from "../components/AriaBadge";
 import EmojiPicker from "../components/EmojiPicker";
+import Avatar from "../components/Avatar";
+import LazyMedia from "../components/LazyMedia";
 
-/** Avatar circular estilo WhatsApp con imagen DiceBear o inicial como fallback. */
-function Avatar({ url, name, size = 40 }) {
-  const initial = (name || "?").charAt(0).toUpperCase();
-  return url ? (
-    <img
-      src={url}
-      alt=""
-      loading="lazy"
-      className="ds-avatar-circle"
-      style={{ width: size, height: size, flexShrink: 0 }}
-    />
-  ) : (
-    <div
-      className="ds-avatar-circle ds-avatar-initial"
-      style={{ width: size, height: size, flexShrink: 0, position: "relative" }}
-    >
-      {initial}
-    </div>
-  );
-}
+const MAX_FILE_BYTES = 6 * 1024 * 1024;
+const MAX_IMAGE_BYTES = 15 * 1024 * 1024;
 
 const PRIORITY_META = {
   alta: { label: "Alta", cls: "ds-priority-badge alta", rank: 0 },
@@ -41,6 +25,18 @@ function PriorityBadge({ priority }) {
 
 const rank = (p) => PRIORITY_META[p]?.rank ?? 1;
 
+function packRecados(list) {
+  const unread = list.filter((r) => !r.read).length;
+  const topPriority = list.reduce(
+    (best, r) => (rank(r.priority) < rank(best) ? r.priority : best),
+    "baja"
+  );
+  const recados = [...list].sort(
+    (a, b) => rank(a.priority) - rank(b.priority) || new Date(b.createdAt) - new Date(a.createdAt)
+  );
+  return { recados, unread, topPriority, hasRecados: recados.length > 0 };
+}
+
 function mergeData(contactsWithMsgs, recados) {
   const recadosByContact = new Map();
   for (const r of recados) {
@@ -48,29 +44,34 @@ function mergeData(contactsWithMsgs, recados) {
     recadosByContact.get(r.contactId).push(r);
   }
 
-  return contactsWithMsgs
-    .map((c) => {
-      const cRecados = recadosByContact.get(c.contactId) || [];
-      const unread = cRecados.filter((r) => !r.read).length;
-      const topPriority = cRecados.reduce(
-        (best, r) => (rank(r.priority) < rank(best) ? r.priority : best),
-        "baja"
-      );
-      return {
-        contactId: c.contactId,
-        contactName: c.contactName,
-        lastMessage: c.lastMessage,
-        lastAt: new Date(c.lastAt).getTime(),
-        avatarUrl: c.avatarUrl || "",
-        recados: cRecados.sort(
-          (a, b) => rank(a.priority) - rank(b.priority) || new Date(b.createdAt) - new Date(a.createdAt)
-        ),
-        unread,
-        topPriority,
-        hasRecados: cRecados.length > 0,
-      };
-    })
-    .sort((a, b) => b.lastAt - a.lastAt);
+  const fromMsgs = contactsWithMsgs.map((c) => {
+    const packed = packRecados(recadosByContact.get(c.contactId) || []);
+    return {
+      contactId: c.contactId,
+      contactName: c.contactName,
+      lastMessage: c.lastMessage,
+      lastAt: new Date(c.lastAt).getTime(),
+      avatarUrl: c.avatarUrl || "",
+      ...packed,
+    };
+  });
+
+  const seen = new Set(fromMsgs.map((c) => c.contactId));
+  const extras = [];
+  for (const [contactId, list] of recadosByContact) {
+    if (seen.has(contactId)) continue;
+    const latest = [...list].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))[0];
+    extras.push({
+      contactId,
+      contactName: latest.contactName || contactId,
+      lastMessage: latest.content,
+      lastAt: new Date(latest.createdAt).getTime(),
+      avatarUrl: "",
+      ...packRecados(list),
+    });
+  }
+
+  return [...fromMsgs, ...extras].sort((a, b) => b.lastAt - a.lastAt);
 }
 
 /** Chip de interpretación IA bajo cada mensaje entrante.
@@ -117,21 +118,7 @@ function IncomingMessage({ m, ai, showSummaryAsMain, avatarUrl, contactName }) {
         <div className="ds-msg-bubble incoming">
           {/* Medio visual (imagen, sticker, gif) */}
           {m.mediaData && m.mediaType && (
-            <div style={{ marginBottom: "var(--ds-space-2)" }}>
-              {m.mediaType === "video/mp4" ? (
-                <video
-                  src={`data:${m.mediaType};base64,${m.mediaData}`}
-                  autoPlay loop muted playsInline
-                  style={{ maxWidth: "220px", maxHeight: "220px", objectFit: "contain" }}
-                />
-              ) : (
-                <img
-                  src={`data:${m.mediaType};base64,${m.mediaData}`}
-                  alt=""
-                  style={{ maxWidth: "220px", maxHeight: "220px", objectFit: "contain" }}
-                />
-              )}
-            </div>
+            <LazyMedia data={m.mediaData} type={m.mediaType} />
           )}
           {/* Contenido principal: caption o interpretación IA.
               Si hay mediaData y el texto es solo la etiqueta genérica, no se muestra
@@ -184,7 +171,7 @@ function IncomingMessage({ m, ai, showSummaryAsMain, avatarUrl, contactName }) {
   );
 }
 
-function Conversation({ group, onRefresh }) {
+function Conversation({ group, onRefresh, active = true }) {
   const [tab, setTab] = useState("recados");
   const [messages, setMessages] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -197,52 +184,102 @@ function Conversation({ group, onRefresh }) {
   const endRef = useRef(null);
   const inputRef = useRef(null);
   const fileInputRef = useRef(null);
+  const sendingRef = useRef(false);
+  const readyRef = useRef(false);
 
-  const load = async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      setMessages(await api.getMessages(group.contactId));
-    } catch {
-      setError("No se pudo cargar la conversación.");
-    } finally {
-      setLoading(false);
-    }
-  };
-  useEffect(() => { load(); /* eslint-disable-next-line */ }, [group.contactId]);
-  useEffect(() => { endRef.current?.scrollIntoView({ block: "nearest" }); }, [messages]);
+  useEffect(() => {
+    if (!active) return undefined;
+    let cancelled = false;
+    const loadMessages = async ({ silent = false } = {}) => {
+      if (!silent) {
+        setLoading(true);
+        setError(null);
+      }
+      try {
+        const msgs = await api.getMessages(group.contactId);
+        if (cancelled || sendingRef.current) return;
+        setMessages(msgs);
+        readyRef.current = true;
+        if (silent) setError(null);
+      } catch {
+        if (!cancelled && !silent) setError("No se pudo cargar la conversación.");
+      } finally {
+        if (!cancelled && !silent) setLoading(false);
+      }
+    };
+    loadMessages({ silent: readyRef.current });
+    const id = setInterval(() => {
+      if (document.hidden || sendingRef.current) return;
+      loadMessages({ silent: true });
+    }, 5000);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, [group.contactId, active]);
+
+  const lastMsgId = messages?.[messages.length - 1]?._id;
+  useEffect(() => {
+    endRef.current?.scrollIntoView({ block: "nearest" });
+  }, [lastMsgId]);
 
   const handleFileSelect = (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
     e.target.value = "";
+    setSendError(null);
 
-    const finalize = (base64, mimetype, filename, preview) =>
+    const isImage = file.type.startsWith("image/");
+    const limit = isImage ? MAX_IMAGE_BYTES : MAX_FILE_BYTES;
+    if (file.size > limit) {
+      const mb = Math.round(limit / (1024 * 1024));
+      setSendError(`El archivo supera ${mb} MB.`);
+      return;
+    }
+
+    const fail = (msg) => setSendError(msg || "No se pudo leer el archivo.");
+    const finalize = (base64, mimetype, filename, preview) => {
+      if (!base64) {
+        fail("No se pudo procesar el archivo.");
+        return;
+      }
       setAttachment({ base64, filename, mimetype, preview });
+    };
 
-    if (file.type.startsWith("image/")) {
-      // Comprimir imagen antes de enviar (máx 1200px, JPEG 0.80)
+    if (isImage) {
       const reader = new FileReader();
+      reader.onerror = () => fail("No se pudo leer la imagen.");
       reader.onload = (ev) => {
         const img = new Image();
         img.onload = () => {
           const MAX = 1200;
-          const scale = Math.min(1, MAX / Math.max(img.width, img.height));
+          const scale = Math.min(1, MAX / Math.max(img.width || 1, img.height || 1));
           const canvas = document.createElement("canvas");
           canvas.width = Math.round(img.width * scale);
           canvas.height = Math.round(img.height * scale);
-          canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
-          const dataUrl = canvas.toDataURL("image/jpeg", 0.80);
-          finalize(dataUrl.split(",")[1], "image/jpeg", file.name.replace(/\.[^.]+$/, ".jpg"), dataUrl);
+          const ctx = canvas.getContext("2d");
+          const keepAlpha = file.type === "image/png" || file.type === "image/webp";
+          if (!keepAlpha) {
+            ctx.fillStyle = "#ffffff";
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+          }
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+          const mime = keepAlpha ? "image/png" : "image/jpeg";
+          const dataUrl = keepAlpha ? canvas.toDataURL("image/png") : canvas.toDataURL("image/jpeg", 0.8);
+          const ext = keepAlpha ? ".png" : ".jpg";
+          const name = file.name.replace(/\.[^.]+$/, ext);
+          finalize(dataUrl.split(",")[1], mime, name, dataUrl);
         };
+        img.onerror = () => fail("Formato de imagen no soportado.");
         img.src = ev.target.result;
       };
       reader.readAsDataURL(file);
     } else {
       const reader = new FileReader();
+      reader.onerror = () => fail("No se pudo leer el archivo.");
       reader.onload = (ev) => {
-        const dataUrl = ev.target.result;
-        finalize(dataUrl.split(",")[1], file.type, file.name, null);
+        const dataUrl = ev.target.result || "";
+        finalize(String(dataUrl).split(",")[1], file.type, file.name, null);
       };
       reader.readAsDataURL(file);
     }
@@ -255,6 +292,7 @@ function Conversation({ group, onRefresh }) {
     const value = text.trim();
     if ((!value && !attachment) || sending) return;
     setSending(true);
+    sendingRef.current = true;
     setSendError(null);
     try {
       let saved;
@@ -273,9 +311,10 @@ function Conversation({ group, onRefresh }) {
       setMessages((prev) => [...(prev || []), saved]);
       setText("");
       onRefresh?.();
-    } catch {
-      setSendError("No se pudo enviar. ¿WhatsApp está conectado?");
+    } catch (err) {
+      setSendError(err?.message || "No se pudo enviar. ¿WhatsApp está conectado?");
     } finally {
+      sendingRef.current = false;
       setSending(false);
     }
   };
@@ -403,7 +442,7 @@ function Conversation({ group, onRefresh }) {
       {/* ── Pestaña: Mensajes + responder ───────────────────────────────── */}
       {tab === "mensajes" && (
         <>
-          <div style={{ padding: "var(--ds-space-3) var(--ds-space-4)", maxHeight: "320px", overflowY: "auto" }}>
+          <div className="ds-msg-thread">
             {loading && (
               <p style={{ textAlign: "center", color: "var(--ds-text-faint)", padding: "var(--ds-space-6) 0", fontFamily: "var(--ds-font-body)", fontWeight: "var(--ds-fw-regular)", fontSize: "var(--ds-fs-xs)", letterSpacing: "var(--ds-ls-caps)", textTransform: "uppercase" }}>
                 Cargando...
@@ -440,7 +479,12 @@ function Conversation({ group, onRefresh }) {
                   return (
                     <div key={m._id} style={{ display: "flex", justifyContent: "flex-end" }}>
                       <div className="ds-msg-bubble outgoing" style={{ maxWidth: "78%" }}>
-                        {m.content}
+                        {m.mediaData && m.mediaType && (
+                          <LazyMedia data={m.mediaData} type={m.mediaType} />
+                        )}
+                        {m.content && !(m.mediaData && /^\[.+\]$/.test(m.content)) ? (
+                          <p style={{ lineHeight: 1.4 }}>{m.content}</p>
+                        ) : null}
                         <div className="ds-msg-meta">
                           {m.via === "manual" ? "✍ manual · " : "⬡ auto · "}
                           {new Date(m.createdAt).toLocaleString("es")}
@@ -581,7 +625,7 @@ function Conversation({ group, onRefresh }) {
   );
 }
 
-export default function Conversaciones() {
+export default function Conversaciones({ active = true }) {
   const [contactsWithMsgs, setContactsWithMsgs] = useState([]);
   const [recados, setRecados] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -615,10 +659,20 @@ export default function Conversaciones() {
       ]);
       setContactsWithMsgs(cms);
       setRecados(recs);
-    } catch { /* silencioso */ }
+      setError(null);
+    } catch { /* silencioso: el poll no pisa el error de la carga inicial */ }
   };
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    if (!active) return undefined;
+    if (contactsWithMsgs.length === 0) load();
+    else refresh();
+    const id = setInterval(() => {
+      if (document.hidden) return;
+      refresh();
+    }, 5000);
+    return () => clearInterval(id);
+  }, [active]);
 
   const groups = mergeData(contactsWithMsgs, recados);
 
@@ -677,7 +731,7 @@ export default function Conversaciones() {
                     {expanded ? "▾" : "▸"}
                   </span>
                 </button>
-                {expanded && <Conversation group={g} onRefresh={refresh} />}
+                {expanded && <Conversation group={g} onRefresh={refresh} active={active} />}
               </div>
             );
           })}

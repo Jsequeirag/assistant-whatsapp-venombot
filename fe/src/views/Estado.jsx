@@ -45,7 +45,7 @@ function Card({ title, children, actions }) {
   );
 }
 
-export default function Estado() {
+export default function Estado({ active = true }) {
   const [current, setCurrent] = useState([]);
   const [groq, setGroq] = useState({ model: "", hasKey: false, keyMasked: "", baseUrl: "", voiceModel: "" });
   const [apiKey, setApiKey] = useState("");
@@ -58,6 +58,7 @@ export default function Estado() {
   const [savedMsg, setSavedMsg] = useState("");
   const [wa, setWa] = useState({ state: "disconnected", qr: null });
   const [restarting, setRestarting] = useState(false);
+  const [loadError, setLoadError] = useState(null);
 
   const loadWa = async () => {
     try {
@@ -68,10 +69,11 @@ export default function Estado() {
   };
 
   useEffect(() => {
+    if (!active) return undefined;
     loadWa();
     const id = setInterval(loadWa, 4000);
     return () => clearInterval(id);
-  }, []);
+  }, [active]);
 
   const restartWa = async () => {
     if (!confirm("¿Cerrar la sesión actual y generar una nueva? Tendrás que escanear el QR de nuevo.")) return;
@@ -95,14 +97,20 @@ export default function Estado() {
 
   const loadAll = async () => {
     setLoading(true);
-    const [audit, settings] = await Promise.all([api.getAudit(), api.getSettings()]);
-    setCurrent(audit.current || []);
-    setGroq(settings.groq);
-    setModel(settings.groq.model || "");
-    setBaseUrl(settings.groq.baseUrl || "");
-    setVoiceModel(settings.groq.voiceModel || "whisper-large-v3-turbo");
-    await loadModels();
-    setLoading(false);
+    setLoadError(null);
+    try {
+      const [audit, settings] = await Promise.all([api.getAudit(), api.getSettings()]);
+      setCurrent(audit.current || []);
+      setGroq(settings.groq);
+      setModel(settings.groq.model || "");
+      setBaseUrl(settings.groq.baseUrl || "");
+      setVoiceModel(settings.groq.voiceModel || "whisper-large-v3-turbo");
+      await loadModels();
+    } catch {
+      setLoadError("No se pudo cargar el estado de servicios.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => { loadAll(); }, []);
@@ -111,22 +119,33 @@ export default function Estado() {
     setSavedMsg("");
     const payload = { model, baseUrl, voiceModel };
     if (apiKey.trim()) payload.apiKey = apiKey.trim();
-    const updated = await api.updateGroq(payload);
-    setGroq(updated);
-    setApiKey("");
-    setSavedMsg("✓ Guardado");
-    setTimeout(() => setSavedMsg(""), 2000);
-    await loadModels();
+    try {
+      const updated = await api.updateGroq(payload);
+      setGroq(updated);
+      setApiKey("");
+      setSavedMsg("✓ Guardado");
+      setTimeout(() => setSavedMsg(""), 2000);
+      await loadModels();
+      return true;
+    } catch {
+      setSavedMsg("No se pudo guardar");
+      setTimeout(() => setSavedMsg(""), 3000);
+      return false;
+    }
   };
 
   const check = async () => {
     setChecking(true);
     try {
       if (apiKey.trim() || model !== groq.model || baseUrl !== groq.baseUrl || voiceModel !== groq.voiceModel) {
-        await saveGroq();
+        const ok = await saveGroq();
+        if (!ok) return;
       }
       const { current: c } = await api.runAuditCheck();
       setCurrent(c || []);
+    } catch {
+      setSavedMsg("No se pudo verificar");
+      setTimeout(() => setSavedMsg(""), 3000);
     } finally {
       setChecking(false);
     }
@@ -136,6 +155,34 @@ export default function Estado() {
     <p style={{ textAlign: "center", color: "var(--ds-text-faint)", padding: "var(--ds-space-12) 0", fontFamily: "var(--ds-font-body)", fontWeight: "var(--ds-fw-regular)", fontSize: "var(--ds-fs-xs)", letterSpacing: "var(--ds-ls-caps)", textTransform: "uppercase" }}>
       Cargando...
     </p>
+  );
+
+  if (loadError) return (
+    <div style={{ textAlign: "center", padding: "var(--ds-space-12) 0" }}>
+      <p style={{ fontFamily: "var(--ds-font-body)", fontWeight: "var(--ds-fw-regular)", fontSize: "var(--ds-fs-xs)", letterSpacing: "var(--ds-ls-caps)", textTransform: "uppercase", color: "var(--ds-text-faint)" }}>
+        {loadError}
+      </p>
+      <button
+        type="button"
+        onClick={loadAll}
+        className="ds-btn-primary"
+        style={{
+          marginTop: "var(--ds-space-4)",
+          fontFamily: "var(--ds-font-body)",
+          fontWeight: "var(--ds-fw-medium)",
+          fontSize: "var(--ds-fs-xs)",
+          letterSpacing: "var(--ds-ls-caps)",
+          textTransform: "uppercase",
+          padding: "var(--ds-space-2) var(--ds-space-4)",
+          background: "var(--ds-accent)",
+          color: "#fff",
+          border: "none",
+          cursor: "pointer",
+        }}
+      >
+        Reintentar
+      </button>
+    </div>
   );
 
   return (
@@ -377,7 +424,7 @@ export default function Estado() {
             {checking ? "Verificando..." : "Verificar"}
           </button>
           {savedMsg && (
-            <span style={{ fontFamily: "var(--ds-font-body)", fontWeight: "var(--ds-fw-regular)", fontSize: "var(--ds-fs-xs)", letterSpacing: "var(--ds-ls-caps)", textTransform: "uppercase", color: "var(--ds-text-muted)" }}>{savedMsg}</span>
+            <span style={{ fontFamily: "var(--ds-font-body)", fontWeight: "var(--ds-fw-regular)", fontSize: "var(--ds-fs-xs)", letterSpacing: "var(--ds-ls-caps)", textTransform: "uppercase", color: savedMsg.startsWith("✓") ? "var(--ds-text-muted)" : "#ef4444" }}>{savedMsg}</span>
           )}
         </div>
       </Card>
